@@ -5,7 +5,10 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework import status
 from .services.ai import ask_gpt
+from django.views.decorators.csrf import csrf_exempt
 
+
+@csrf_exempt
 @api_view(["POST"])
 @permission_classes([AllowAny])  # 배포 시에는 토큰 등으로 제한 권장
 def chat(request):

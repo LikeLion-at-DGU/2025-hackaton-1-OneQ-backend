@@ -23,7 +23,7 @@ def ask_gpt(message: str) -> str:
     resp = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[
-            {"role": "system", "content": "You are a concise assistant for print estimates."},
+            {"role": "system", "content": "You are a concise assistant for print estimates."}, # 테스트용
             {"role": "user", "content": message},
         ],
         temperature=0.3,
