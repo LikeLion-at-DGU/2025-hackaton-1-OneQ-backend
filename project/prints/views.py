@@ -10,7 +10,7 @@ from django.views.decorators.csrf import csrf_exempt
 
 @csrf_exempt
 @api_view(["POST"])
-@permission_classes([AllowAny])  # 배포 시에는 토큰 등으로 제한 권장
+@permission_classes([AllowAny])  # 배포 시에는 토큰 등으로 제한하기
 def chat(request):
     """
     POST /api/chat

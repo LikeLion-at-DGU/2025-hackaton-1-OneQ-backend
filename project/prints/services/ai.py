@@ -1,4 +1,3 @@
-# project/prints/services/ai.py
 import os
 from openai import OpenAI
 
@@ -23,11 +22,11 @@ def ask_gpt(message: str) -> str:
     resp = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[
-            {"role": "system", "content": "You are a concise assistant for print estimates."}, # 테스트용
+            {"role": "system", "content": "You are a concise assistant for print estimates."}, # "너는 인쇄 견적 도우미다"
             {"role": "user", "content": message},
         ],
         temperature=0.3,
         max_tokens=200,
-        timeout=20,  # 네트워크 지연 대비(초)
+        timeout=20,  # 네트워크 지연 대비(초 단위임)
     )
     return (resp.choices[0].message.content or "").strip()
