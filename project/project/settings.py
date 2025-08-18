@@ -44,7 +44,7 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
-        'corsheaders.middleware.CorsMiddleware', # 최상단으로 위치 변경
+    'corsheaders.middleware.CorsMiddleware', # 최상단으로 위치 변경
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -133,8 +133,10 @@ CORS_ALLOW_CREDENTIALS = True
 
 CORS_ALLOWED_ORIGINS = [
     'https://oneqqq.netlify.app',
-    #
+    "http://localhost:5174",
 ]
+
+
 
 CORS_ALLOW_HEADERS = [
     "content-type",
@@ -142,9 +144,12 @@ CORS_ALLOW_HEADERS = [
     "x-csrftoken",
 ]
 
+
+
 CSRF_TRUSTED_ORIGINS = [
     "https://oneqqq.netlify.app",
     "https://yumiykim.shop",
+    "http://localhost:5174",
 ]
 
 SESSION_COOKIE_SECURE = True
