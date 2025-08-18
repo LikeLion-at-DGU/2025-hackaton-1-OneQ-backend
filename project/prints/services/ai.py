@@ -1,315 +1,798 @@
 # prints/services/ai.py
-from __future__ import annotations
-import os, json, time, random
-from typing import List, Dict, Optional
-from openai import OpenAI, APIError
+import json
+import re
+from typing import Dict, List, Optional
+from ..models import PrintShop
+from .gpt_client import GPTClient
+from .db_formatter import DBFormatter
+from .conversation_manager import ConversationManager
 
-_client: OpenAI | None = None
-_EXPLAIN_CACHE = {}  # 용어 설명 캐시
+class PrintShopAIService:
+    """인쇄소 DB 기반 AI 챗봇 서비스 (GPT-4-mini 통합)"""
+    
+    def __init__(self, category: str):
+        self.category = category # "명함", "배너", "포스터" 등 카테고리 수집
+        self.printshops = self._get_printshops_by_category(category) # 해당 카테고리를 지원하는 인쇄소만 필터링
+        self.category_info = self._get_category_info() # 카테고리별 정보 수집
+        
+        # GPT 관련 객체들 초기화
+        self.gpt_client = GPTClient()
+        self.db_formatter = DBFormatter(self.category_info, self.category)
+        self.conversation_manager = ConversationManager()
+        
+        # GPT 사용 가능 여부 확인
+        self.use_gpt = self.gpt_client.is_available()
+    
+    def _get_printshops_by_category(self, category: str) -> List[PrintShop]:
+        """카테고리별 인쇄소 조회"""
+        print(f"인쇄소 조회 시작 - 카테고리: {category}")
+        
+        # 모든 활성화된 인쇄소 조회
+        all_printshops = PrintShop.objects.filter(
+            is_active=True,
+            registration_status='completed'
+        )
+        print(f"활성화된 인쇄소 수: {all_printshops.count()}")
+        
+        # 해당 카테고리를 지원하는 인쇄소만 필터링
+        filtered_printshops = []
+        for printshop in all_printshops:
+            print(f"인쇄소 확인: {printshop.name} - 카테고리: {printshop.available_categories}")
+            if category in printshop.available_categories:
+                filtered_printshops.append(printshop)
+                print(f"✓ {printshop.name} 추가됨")
+            else:
+                print(f"✗ {printshop.name} 제외됨 (카테고리 불일치)")
+        
+        print(f"최종 필터링된 인쇄소 수: {len(filtered_printshops)}")
+        return filtered_printshops
+    
+    def _get_category_info(self) -> Dict:
+        """카테고리별 정보 수집"""
+        if not self.printshops: # 등록된 인쇄소가 없다면 빈 딕셔너리 반환환
+            return {}
+        
+        combined_info = {} # 카테고리별 정보를 저장할 딕셔너리
+        
+        category_fields = { # 각 카테고리마다 필요한 DB 필드들을 정의
+            '명함': ['business_card_papers', 'business_card_quantities', 'business_card_printing', 'business_card_finishing'],
+            '배너': ['banner_sizes', 'banner_stands', 'banner_quantities'],
+            '포스터': ['poster_papers', 'poster_coating', 'poster_quantities'],
+            '스티커': ['sticker_types', 'sticker_quantities', 'sticker_sizes'],
+            '현수막': ['banner_large_sizes', 'banner_large_quantities', 'banner_large_processing'],
+            '브로슈어': ['brochure_papers', 'brochure_folding', 'brochure_sizes', 'brochure_quantities']
+        }
+        # 각 필드별 정보 수집집
+        if self.category in category_fields:
+            for field in category_fields[self.category]:
+                field_values = []
+                for printshop in self.printshops:
+                    value = getattr(printshop, field, '') # DB 필드에서 값 가져오기기
+                    if value: # 값이 있으면 리스트에 추가
+                        field_values.append(value)
+                
+                if field_values:
+                    # 중복 제거하고 합치기
+                    combined_info[field] = '\n'.join(set(field_values))
+        
+        return combined_info
+    
+    def get_category_introduction(self) -> str:
+        """카테고리 소개 메시지"""
+        # 각 카테고리마다 다른 인사말 제공공
+        introductions = {
+            '명함': "안녕하세요! 명함 제작 전문 챗봇입니다. 🏢\n\n명함 제작에 필요한 정보를 단계별로 안내해드릴게요.",
+            '배너': "안녕하세요! 배너 제작 전문 챗봇입니다. 🎨\n\n배너 제작에 필요한 정보를 단계별로 안내해드릴게요.",
+            '포스터': "안녕하세요! 포스터 제작 전문 챗봇입니다. 📢\n\n포스터 제작에 필요한 정보를 단계별로 안내해드릴게요.",
+            '스티커': "안녕하세요! 스티커 제작 전문 챗봇입니다. 🏷️\n\n스티커 제작에 필요한 정보를 단계별로 안내해드릴게요.",
+            '현수막': "안녕하세요! 현수막 제작 전문 챗봇입니다. 🏁\n\n현수막 제작에 필요한 정보를 단계별로 안내해드릴게요.",
+            '브로슈어': "안녕하세요! 브로슈어 제작 전문 챗봇입니다. 📖\n\n브로슈어 제작에 필요한 정보를 단계별로 안내해드릴게요."
+        }
+        
+        intro = introductions.get(self.category, "안녕하세요! 인쇄 제작 전문 챗봇입니다.")
+        
+        # 첫 번째 질문 추가
+        intro += "\n\n" + self._get_first_question()
+        
+        return intro
+    
+    def _get_first_question(self) -> str:
+        """첫 번째 질문 생성"""
+        # 각 카테고리마다 필요한 정보를 수집하는 순서
+        category_flows = {
+            '명함': ['quantity', 'paper', 'printing', 'finishing'],
+            '배너': ['size', 'quantity', 'stand'],
+            '포스터': ['paper', 'size', 'quantity', 'coating'],
+            '스티커': ['type', 'size', 'quantity'],
+            '현수막': ['size', 'quantity', 'processing'],
+            '브로슈어': ['paper', 'folding', 'size', 'quantity']
+        }
+        
+        # 현재 카테고리의 순서 가져오기기
+        flow = category_flows.get(self.category, [])
+        if flow:
+            return self._get_question_for_slot(flow[0])
+        
+        return "어떤 정보가 필요하신가요?"
+    
+    def _get_question_for_slot(self, slot: str) -> str:
+        """슬롯별 질문 생성 (DB 정보 포함)"""
+        questions = {
+            'quantity': '수량은 얼마나 하실 건가요?', # 수량은 자유 입력이므로 바로 질문(DB 조회 불필요요)
+            'paper': self._get_paper_question(),
+            'size': self._get_size_question(),
+            'printing': '인쇄 방식은 어떻게 하시겠어요? (단면, 양면)', # 인쇄 방식은 단면,양면 두 가지만 존재하므로 바로 질문
+            'finishing': self._get_finishing_question(),
+            'coating': self._get_coating_question(),
+            'type': self._get_type_question(),
+            'stand': self._get_stand_question(),
+            'processing': self._get_processing_question(),
+            'folding': self._get_folding_question()
+        }
+        
+        return questions.get(slot, f'{slot}에 대해 알려주세요.')
+    
+    # 각 슬롯별 질문 생성 함수(DB 정보 조회 후 질문 생성)
+    def _get_paper_question(self) -> str:
+        """용지 질문 (DB 정보 포함)"""
+        papers = self._extract_papers_from_db()
+        if papers:
+            return f"용지는 어떤 걸로 하시겠어요? ({', '.join(papers)})"
+        return "용지는 어떤 걸로 하시겠어요?"
+    
+    def _get_size_question(self) -> str:
+        """사이즈 질문 (DB 정보 포함)"""
+        sizes = self._extract_sizes_from_db()
+        if sizes:
+            return f"사이즈는 어떻게 하시겠어요? ({', '.join(sizes)})"
+        return "사이즈는 어떻게 하시겠어요?"
+    
+    def _get_finishing_question(self) -> str:
+        """후가공 질문 (DB 정보 포함)"""
+        finishing_options = self._extract_finishing_from_db()
+        if finishing_options:
+            return f"후가공 옵션은 어떤 걸 원하시나요? ({', '.join(finishing_options)})"
+        return "후가공 옵션은 어떤 걸 원하시나요?"
+    
+    def _get_coating_question(self) -> str:
+        """코팅 질문 (DB 정보 포함)"""
+        coating_options = self._extract_coating_from_db()
+        if coating_options:
+            return f"코팅 옵션은 어떤 걸 원하시나요? ({', '.join(coating_options)})"
+        return "코팅 옵션은 어떤 걸 원하시나요?"
+    
+    def _get_type_question(self) -> str:
+        """종류 질문 (DB 정보 포함)"""
+        types = self._extract_types_from_db()
+        if types:
+            return f"어떤 종류로 하시겠어요? ({', '.join(types)})"
+        return "어떤 종류로 하시겠어요?"
+    
+    def _get_stand_question(self) -> str:
+        """거치대 질문 (DB 정보 포함)"""
+        stands = self._extract_stands_from_db()
+        if stands:
+            return f"거치대는 어떤 걸 원하시나요? ({', '.join(stands)})"
+        return "거치대는 어떤 걸 원하시나요?"
+    
+    def _get_processing_question(self) -> str:
+        """가공 질문 (DB 정보 포함)"""
+        processing_options = self._extract_processing_from_db()
+        if processing_options:
+            return f"추가 가공 옵션은 어떤 걸 원하시나요? ({', '.join(processing_options)})"
+        return "추가 가공 옵션은 어떤 걸 원하시나요?"
+    
+    def _get_folding_question(self) -> str:
+        """접지 질문 (DB 정보 포함)"""
+        folding_options = self._extract_folding_from_db()
+        if folding_options:
+            return f"접지 방식은 어떤 걸 원하시나요? ({', '.join(folding_options)})"
+        return "접지 방식은 어떤 걸 원하시나요?"
+    
+    # DB에서 정보 추출 함수(수정 필요)
+    def _extract_papers_from_db(self) -> List[str]:
+        """DB에서 용지 정보 추출"""
+        papers = []
+        paper_fields = {
+            '명함': 'business_card_papers',
+            '포스터': 'poster_papers',
+            '브로슈어': 'brochure_papers'
+        }
+        
+        field = paper_fields.get(self.category)
+        if field and field in self.category_info:
+            content = self.category_info[field]
+            # 해당 필드의 전체 텍스트 내용 가져옴
+            paper_patterns = ['반누보', '휘라레', '스타드림퀼츠', '아트지', '스노우지', '랑데부', '양상블', '무광', '유광', '백상지'] # 여기 단어에 있는 것만 추출하는 하드코딩 방식이라 수정 필요
+            for pattern in paper_patterns:
+                if pattern in content:
+                    papers.append(pattern)
+        
+        return list(set(papers))  # 중복 제거
+    
+    def _extract_sizes_from_db(self) -> List[str]:
+        """DB에서 사이즈 정보 추출"""
+        sizes = []
+        size_fields = {
+            '배너': 'banner_sizes',
+            '스티커': 'sticker_sizes',
+            '현수막': 'banner_large_sizes',
+            '브로슈어': 'brochure_sizes'
+        }
+        
+        field = size_fields.get(self.category)
+        if field and field in self.category_info:
+            content = self.category_info[field]
+            # 사이즈 추출
+            size_patterns = ['A4', 'A5', 'A3', 'B4', 'B5', '600×1800mm', '150×300mm', '200×400mm'] # 이것도 하드코딩 정규표현식으로 수정?
+            for pattern in size_patterns:
+                if pattern in content:
+                    sizes.append(pattern)
+                else:
+                    sizes.append(pattern)
+        
+        return list(set(sizes))
+    
+    def _extract_finishing_from_db(self) -> List[str]:
+        """DB에서 후가공 정보 추출"""
+        finishing = []
+        finishing_fields = {
+            '명함': 'business_card_finishing'
+        }
+        
+        field = finishing_fields.get(self.category)
+        if field and field in self.category_info:
+            content = self.category_info[field]
+            finishing_patterns = ['형압', '박', '오시', '절취선', '도무송', '넘버링'] # 하드코딩
+            for pattern in finishing_patterns:
+                if pattern in content:
+                    finishing.append(pattern)
+        
+        return list(set(finishing))
+    
+    def _extract_coating_from_db(self) -> List[str]:
+        """DB에서 코팅 정보 추출"""
+        coating = []
+        coating_fields = {
+            '포스터': 'poster_coating'
+        }
+        
+        field = coating_fields.get(self.category)
+        if field and field in self.category_info:
+            content = self.category_info[field]
+            coating_patterns = ['유광', '무광', '스팟 UV', '에폭시']
+            for pattern in coating_patterns:
+                if pattern in content:
+                    coating.append(pattern)
+        
+        return list(set(coating))
+    
+    def _extract_types_from_db(self) -> List[str]:
+        """DB에서 종류 정보 추출"""
+        types = []
+        type_fields = {
+            '스티커': 'sticker_types'
+        }
+        
+        field = type_fields.get(self.category)
+        if field and field in self.category_info:
+            content = self.category_info[field]
+            type_patterns = ['싱글', '시트', '롤', '데칼', '띠부']
+            for pattern in type_patterns:
+                if pattern in content:
+                    types.append(pattern)
+        
+        return list(set(types))
+    
+    def _extract_stands_from_db(self) -> List[str]:
+        """DB에서 거치대 정보 추출"""
+        stands = []
+        stand_fields = {
+            '배너': 'banner_stands'
+        }
+        
+        field = stand_fields.get(self.category)
+        if field and field in self.category_info:
+            content = self.category_info[field]
+            stand_patterns = ['미니배너 거치대', '실내 거치대', '실외 거치대']
+            for pattern in stand_patterns:
+                if pattern in content:
+                    stands.append(pattern)
+        
+        return list(set(stands))
+    
+    def _extract_processing_from_db(self) -> List[str]:
+        """DB에서 가공 정보 추출"""
+        processing = []
+        processing_fields = {
+            '현수막': 'banner_large_processing'
+        }
+        
+        field = processing_fields.get(self.category)
+        if field and field in self.category_info:
+            content = self.category_info[field]
+            processing_patterns = ['사방 아일렛', '열재단', '각목막대']
+            for pattern in processing_patterns:
+                if pattern in content:
+                    processing.append(pattern)
+        
+        return list(set(processing))
+    
+    def _extract_folding_from_db(self) -> List[str]:
+        """DB에서 접지 정보 추출"""
+        folding = []
+        folding_fields = {
+            '브로슈어': 'brochure_folding'
+        }
+        
+        field = folding_fields.get(self.category)
+        if field and field in self.category_info:
+            content = self.category_info[field]
+            folding_patterns = ['2단', '3단']
+            for pattern in folding_patterns:
+                if pattern in content:
+                    folding.append(pattern)
+        
+        return list(set(folding))
+    
+    def process_user_message(self, message: str, current_slots: Dict) -> Dict:
+        """사용자 메시지 처리 (GPT-4-mini 기반)"""
+        # GPT 사용 가능하면 GPT로 처리, 아니면 간단한 기본 응답
+        if self.use_gpt:
+            try:
+                return self._process_conversation_with_gpt(message, current_slots)
+            except Exception as e:
+                print(f"GPT 처리 오류: {e}")
+                return self._simple_fallback_response(message, current_slots)
+        else:
+            return self._simple_fallback_response(message, current_slots)
+    
+    def _process_conversation_with_gpt(self, message: str, current_slots: Dict) -> Dict:
+        """GPT-4-mini로 대화 처리"""
+        print(f"GPT 처리 시작 - 메시지: {message}")  # 디버깅 로그
+        
+        # 대화 히스토리 업데이트 (이미 로드된 경우 중복 방지)
+        if not self.conversation_manager.conversation_history or \
+           self.conversation_manager.conversation_history[-1]['content'] != message:
+            self.conversation_manager.add_message('user', message)
+        
+        # DB 컨텍스트 생성
+        db_context = self.db_formatter.format_context_for_gpt()
+        
+        # 대화 컨텍스트 생성
+        conversation_context = self.conversation_manager.get_recent_context()
+        
+        # GPT 프롬프트 생성
+        prompt = self._create_gpt_prompt(message, current_slots, db_context, conversation_context)
+        print(f"GPT 프롬프트 생성 완료")  # 디버깅 로그
+        
+        # GPT API 호출
+        response = self.gpt_client.process_conversation(prompt)
+        print(f"GPT API 응답: {response}")  # 디버깅 로그
+        
+        # 응답 처리
+        return self._process_gpt_response(response, current_slots)
+    
+    def _create_gpt_prompt(self, message: str, current_slots: Dict, db_context: str, conversation_context: str) -> str:
+        """GPT 프롬프트 생성"""
+        # 카테고리별 필수 슬롯 정의
+        required_slots = {
+            '명함': ['quantity', 'paper', 'printing', 'finishing'],
+            '배너': ['size', 'quantity', 'stand'],
+            '포스터': ['paper', 'size', 'quantity', 'coating'],
+            '스티커': ['type', 'size', 'quantity'],
+            '현수막': ['size', 'quantity', 'processing'],
+            '브로슈어': ['paper', 'folding', 'size', 'quantity']
+        }
+        
+        required = required_slots.get(self.category, [])
+        missing_slots = self.conversation_manager.get_missing_slots(required)
+        
+        prompt = f"""
+당신은 인쇄 전문 챗봇입니다. 다음 인쇄소 DB 정보를 바탕으로 자유롭게 대화해주세요.
 
-def _get_client() -> OpenAI:
-    global _client
-    if _client is None:
-        key = os.environ.get("OPENAI_API_KEY")
-        if not key:
-            raise RuntimeError("OPENAI_API_KEY 미설정")
-        _client = OpenAI(api_key=key)
-    return _client
+=== 인쇄소 DB 정보 ===
+{db_context}
 
-def _chat_with_backoff(**kwargs):
-    """백오프가 적용된 LLM 호출 (타임아웃 포함)"""
-    delay = 1.0
-    for attempt in range(3):
-        try:
-            kwargs.setdefault('timeout', 30)
-            return _get_client().chat.completions.create(**kwargs)
-        except Exception as e:
-            msg = str(e).lower()
-            if "rate limit" in msg or "429" in msg:
-                if attempt < 2:
-                    time.sleep(delay + random.uniform(0, 0.3))
-                    delay = min(delay * 2, 10)
-                    continue
-            raise
-    raise RuntimeError("LLM rate limit: retries exhausted")
+=== 현재 상황 ===
+카테고리: {self.category}
+수집된 정보: {current_slots}
+아직 필요한 정보: {missing_slots}
+대화 상태: {self.conversation_manager.get_state()}
 
-def prune_history(history: List[Dict], keep: int = 8) -> List[Dict]:
-    """히스토리 자르기 - 마지막 N턴만 보내"""
-    return (history or [])[-keep:]
+=== 전체 대화 히스토리 ===
+{conversation_context}
 
-# 견적 위저드 시스템 프롬프트
-_SYSTEM = """
-당신은 인쇄 견적 전문 챗봇입니다. 사용자와 대화하면서 견적 정보를 수집하고, 최종 견적서를 제공합니다.
+=== 사용자 메시지 ===
+{message}
 
-**주요 기능:**
-1. 견적 정보 수집 (수량, 사이즈, 재질, 후가공 등)
-2. 용어 설명 (사용자가 모르는 용어 질문 시)
-3. 최종 확인 및 수정
-4. 견적 리포트 생성
+=== 핵심 지시사항 ===
+1. **자연어 이해**: 사용자의 다양한 표현을 자유롭게 이해하세요
+   - "200부 가능해?" → 수량 정보로 인식
+   - "아트지로 할래" → 용지 선택으로 인식
+   - "양면으로" → 인쇄 방식으로 인식
+   - "형압은 뭐야?" → 용어 설명 요청으로 인식
 
-**대화 플로우:**
-1. ASK: 견적 정보 수집 (다음 질문)
-2. EXPLAIN: 용어 설명
-3. CONFIRM: 최종 확인
-4. MATCH: 견적 리포트 생성
+2. **DB 기반 응답**: 위의 DB 정보만을 바탕으로 정확한 정보 제공
+3. **자연스러운 대화**: 친근하고 자연스러운 톤으로 대화
+4. **맥락 이해**: 이전 대화를 고려하여 적절한 응답
+5. **상태 기억**: 이미 수집된 정보는 다시 묻지 말고 다음 단계로 진행
+6. **슬롯 업데이트**: 사용자 메시지에서 정보를 추출하여 적절한 슬롯에 저장
 
-**의도 판단:**
-- "뭐야?", "설명해", "차이점" → EXPLAIN (용어 설명)
-- "~로 할래", "~로 해줘", "~로 하겠습니다", "그거로 할게요", "그거로요", "네 그거요", "그거로 하겠어요", "그걸로 할게요", "그걸로요", "그거로 하겠습니다", "그걸로 하겠습니다", 숫자/구체정보 → ASK (정보 수집)
-- "네", "맞아요", "확인", "네 맞습니다", "네 맞아요", "맞습니다", "맞아요", "그래요", "그래", "좋아요", "좋아", "괜찮아요", "괜찮아", "네 그렇습니다", "그렇습니다", "네 그렇네요", "그렇네요", "네 맞아", "맞아", "네 맞습니다", "맞습니다" → MATCH (최종 견적서 생성 및 인쇄소 추천)
-- "아니요", "수정", "바꿀래", "다시", "재질 다시", "수량 다시", "사이즈 다시", "마감 다시", "색상 다시", "납기 다시", "지역 다시" → ASK (수정 모드)
+=== 중요: 견적 완료 시 처리 방식 ===
+7. **견적 리포트 생성**: 모든 정보 수집 완료 시 주문 진행이 아닌 견적 리포트 제공
+   - 사용자가 "네", "확인", "좋아" 등으로 최종 확인 시
+   - 견적 리포트와 추천 인쇄소 TOP3를 제공
+   - 주문 진행 메시지 대신 "견적 리포트를 생성하겠습니다"라고 응답
 
-**중요한 규칙:**
-- 사용자가 이미 설명받은 용어에 대해 "~로 하겠습니다"라고 결정하면, 그 용어를 다시 설명하지 말고 다음 정보 수집으로 넘어가세요
-- 용어 설명 후 사용자가 결정을 내리면, 그 정보를 filled_slots에 추가하고 다음 질문을 하세요
-- 선택지를 제공할 때는 해당 인쇄소가 실제로 보유하고 있는 옵션만 제시하세요
-- 예: 코팅 옵션은 해당 인쇄소의 post_processing.coating 목록에서만 선택
-- 질문에서 예시를 들 때는 반드시 용어사전에 있는 용어들만 언급하세요
-- 용어사전에 없는 용어는 절대 제안하지 마세요 (예: 모조지, 크라프트지 등)
+=== 처리 방식 ===
+- **정보 수집**: 사용자 메시지에서 관련 정보 추출하여 슬롯 업데이트
+- **용어 설명**: DB에 있는 용어에 대해 상세히 설명
+- **수정 요청**: 사용자가 수정하고 싶어하는 부분 파악
+- **확인 요청**: 수집된 정보 확인 및 다음 단계 안내
+- **견적 리포트**: 모든 정보 수집 완료 시 견적 리포트 + 추천 인쇄소 TOP3 제공
 
-**질문별 용어사전 예시 (반드시 이 용어들만 사용):**
-- 수량 질문: "몇 부 필요하신가요? (예: 100부, 200부, 500부, 1000부)"
-- 사이즈 질문: "사이즈는 어떻게 하시겠어요? (예: 90x50mm, 86x54mm, A4, A3, A1, A0)"
-- 재질 질문: "재질은 무엇으로 할까요? (예: 아트지, 스노우지, 반누보 186g, 휘라레 216g, 스타드림쿼츠 240g, 키칼라아이스골드 230g, 벨벳 300g, PP 250gsm, PET 250gsm, 반투명 PP, 메탈 PP, 배너천, 타프린, 메쉬천, 실크천, PVC)"
-- 마감/코팅 질문: "마감(코팅)은 무엇으로 할까요? (예: 무광, 유광, 스팟 UV, 에폭시, UV 코팅, 매트 코팅)"
-- 색상 질문: "인쇄 색상은 어떻게 할까요? (예: 단면 컬러, 양면 컬러, 단면 흑백)"
-- 스티커 형태 질문: "스티커 모양은 어떻게 할까요? (예: 사각, 원형, 자유형(도무송))"
-- 라미네이팅 질문: "라미네이팅(필름)은 적용할까요? (예: 무광 라미, 유광 라미)"
-- 배너 고리 질문: "배너 고리(아일렛)는 어디에 뚫을까요? (예: 모서리 4개, 상단 2개)"
-- 납기 질문: "납기는 며칠 후면 좋을까요? (예: 1일, 2일, 3일, 5일, 7일)"
-- 지역 질문: "지역은 어디로 설정할까요? (예: 서울-중구, 서울-종로, 경기-성남)"
+=== 응답 형시 ===
+JSON 형태로 응답해주세요:
+{{
+    "action": "ask/explain/modify/confirm/quote",
+    "message": "사용자에게 보낼 자연스러운 메시지",
+    "slots": {{"quantity": "200부", "paper": "아트지"}},
+    "next_question": "다음 질문 (선택적)"
+}}
 
-**중요 규칙:**
-- 사용자가 이미 제공한 정보는 다시 묻지 마세요
-- 용어 설명 요청 시 친절하고 자세히 설명하세요
-- 용어 설명 후 사용자가 "~로 하겠습니다"라고 결정하면, 그 정보를 슬롯에 저장하고 다음 질문으로 넘어가세요
-- 최종 확인 시 모든 정보를 정리해서 보여주세요
-- 수정 요청 시 해당 부분으로 돌아가세요
-- **질문 생성 시 반드시 위의 예시 형식을 그대로 사용하세요 (괄호와 예시 포함)**
+=== 견적 완료 시 예시 ===
+사용자가 "네", "확인", "좋아" 등으로 최종 확인 시:
+{{
+    "action": "quote",
+    "message": "견적 리포트를 생성하겠습니다! 수집된 정보를 바탕으로 최적의 인쇄소를 추천해드릴게요.",
+    "slots": {{"quantity": "200부", "paper": "아트지", "printing": "양면", "finishing": "형압"}}
+}}
 
-JSON 응답 형식:
-{
-  "action": "ASK|EXPLAIN|CONFIRM|MATCH",
-  "question": "ASK일 때 질문",
-  "filled_slots": {"slot_name": "value"},
-  "term": "EXPLAIN일 때 용어명",
-  "choices": ["선택지1", "선택지2"]
-}
-
-**용어 설명 후 결정 처리:**
-- 사용자가 용어 설명 후 "~로 하겠습니다", "그거로 할게요", "그거로요", "네 그거요", "그거로 하겠어요", "그걸로 할게요", "그걸로요", "그거로 하겠습니다", "그걸로 하겠습니다" 등으로 결정하면:
-  - action: "EXPLAIN" 유지
-  - filled_slots에 해당 결정 정보 포함
-  - 예: {"action": "EXPLAIN", "term": "아트지", "filled_slots": {"material": "아트지 230g"}}
-
-**슬롯 매핑 규칙:**
-- 재질 관련: material 슬롯에 저장
-- 마감/코팅 관련: finishing 슬롯에 저장
-- 색상 관련: color_mode 슬롯에 저장
-- 수량 관련: quantity 슬롯에 저장
-- 사이즈 관련: size 슬롯에 저장
-- 납기 관련: due_days 슬롯에 저장
-- 지역 관련: region 슬롯에 저장
-
-**현재 질문 슬롯 파악:**
-- "재질은 무엇으로 할까요?" → material 슬롯
-- "마감(코팅)은 무엇으로 할까요?" → finishing 슬롯
-- "인쇄 색상은 어떻게 할까요?" → color_mode 슬롯
-- "몇 부 필요하신가요?" → quantity 슬롯
-- "사이즈는 어떻게 하시겠어요?" → size 슬롯
-- "납기는 며칠 후면 좋을까요?" → due_days 슬롯
-- "지역은 어디로 설정할까요?" → region 슬롯
+**중요**: 
+1. 사용자의 의도를 정확히 파악하고, DB 정보를 바탕으로 유용한 응답을 제공하세요.
+2. 모든 정보 수집 완료 시 주문 진행이 아닌 견적 리포트를 제공하세요.
+3. "주문을 진행하겠습니다" 대신 "견적 리포트를 생성하겠습니다"라고 응답하세요.
 """
-
-def ask_action(history: List[Dict], current_slots: Dict = None) -> Dict:
-    """
-    AI가 사용자 입력을 분석하여 다음 액션을 결정
-    """
-    pruned_history = prune_history(history, keep=8)
+        return prompt
     
-    # 현재 슬롯 상태를 컨텍스트로 추가
-    context = f"현재 견적 정보: {current_slots or {}}"
-    messages = [
-        {"role": "system", "content": _SYSTEM},
-        {"role": "system", "content": context}
-    ] + pruned_history
+    def _process_gpt_response(self, response: Dict, current_slots: Dict) -> Dict:
+        """GPT 응답 처리"""
+        print(f"GPT 원본 응답: {response}")  # 디버깅 로그
+        
+        if 'error' in response:
+            print(f"GPT 오류 발생: {response['error']}")
+            return self._simple_fallback_response("", current_slots)
+        
+        # 슬롯 업데이트
+        if 'slots' in response and response['slots']:
+            current_slots.update(response['slots'])
+            self.conversation_manager.update_slots(response['slots'])
+            print(f"슬롯 업데이트: {response['slots']}")
+        
+        # 대화 히스토리에 응답 추가 (중복 방지)
+        if 'message' in response:
+            if not self.conversation_manager.conversation_history or \
+               self.conversation_manager.conversation_history[-1]['content'] != response['message']:
+                self.conversation_manager.add_message('assistant', response['message'])
+        
+        # 응답이 없거나 잘못된 경우 간단한 폴백
+        if 'message' not in response or not response['message']:
+            print("GPT 응답에 메시지가 없음 - 간단한 폴백 처리")
+            return self._simple_fallback_response("", current_slots)
+        
+        # 견적 완료 시 견적 리포트 생성
+        if response.get('action') == 'quote':
+            print("견적 완료 - 견적 리포트 생성")
+            quote_result = self.calculate_quote(current_slots)
+            response['message'] = self._format_final_quote(quote_result)
+            response['quote_data'] = quote_result
+        
+        return response
     
-    res = _chat_with_backoff(
-        model="gpt-4o-mini",
-        temperature=0.1,
-        max_tokens=200,
-        response_format={"type": "json_object"},
-        messages=messages
-    )
+    def _simple_fallback_response(self, message: str, current_slots: Dict) -> Dict:
+        """GPT 실패 시 간단한 기본 응답"""
+        return {
+                'action': 'ask',
+            'message': '죄송합니다. AI 서비스에 일시적인 문제가 있습니다. 다시 한 번 말씀해주세요.',
+                'slots': current_slots
+            }
     
-    result = json.loads(res.choices[0].message.content)
-    print(f"DEBUG: AI response = {result}")
+    # GPT가 모든 자연어 처리를 담당하므로 하드코딩된 키워드 매칭 로직 제거
+    # 대신 GPT 프롬프트에서 DB 정보를 제공하여 자유롭게 처리하도록 함
     
-    return result
-
-def polish_explanation(term: str, facts: Dict, user_question: str = "") -> str:
-    """
-    용어 설명을 자연스러운 문장으로 다듬기
-    """
-    if not facts:
-        return f"'{term}'에 대한 정보가 아직 준비되지 않았습니다."
+    def _is_all_slots_filled(self, slots: Dict) -> bool:
+        """모든 슬롯이 채워졌는지 확인"""
+        category_flows = {
+            '명함': ['quantity', 'paper', 'printing', 'finishing'],
+            '배너': ['size', 'quantity', 'stand'],
+            '포스터': ['paper', 'size', 'quantity', 'coating'],
+            '스티커': ['type', 'size', 'quantity'],
+            '현수막': ['size', 'quantity', 'processing'],
+            '브로슈어': ['paper', 'folding', 'size', 'quantity']
+        }
+        
+        flow = category_flows.get(self.category, [])
+        return all(slot in slots and slots[slot] for slot in flow)
     
-    # 차이점 비교 요청인지 확인
-    is_comparison = any(keyword in user_question for keyword in ["차이", "비교", "다르다"])
+    def _get_next_question(self, slots: Dict) -> str:
+        """다음 질문 생성"""
+        category_flows = {
+            '명함': ['quantity', 'paper', 'printing', 'finishing'],
+            '배너': ['size', 'quantity', 'stand'],
+            '포스터': ['paper', 'size', 'quantity', 'coating'],
+            '스티커': ['type', 'size', 'quantity'],
+            '현수막': ['size', 'quantity', 'processing'],
+            '브로슈어': ['paper', 'folding', 'size', 'quantity']
+        }
+        
+        flow = category_flows.get(self.category, [])
+        
+        for slot in flow:
+            if slot not in slots or not slots[slot]:
+                return self._get_question_for_slot(slot)
+        
+        return "모든 정보가 수집되었습니다!"
     
-    if is_comparison:
-        sys_prompt = "인쇄 용어 비교 설명: 각 용어의 정의와 주요 차이점을 명확하게 설명하세요."
-    else:
-        sys_prompt = "인쇄 용어 설명: 정의, 효과, 비용, 사용처를 포함하여 친절하게 설명하세요."
+    def _format_confirmation_message(self, slots: Dict) -> str:
+        """확인 메시지 포맷팅"""
+        message = f"📋 {self.category} 견적 정보 확인\n\n"
+        
+        slot_names = {
+            'quantity': '수량',
+            'paper': '용지',
+            'size': '사이즈',
+            'printing': '인쇄 방식',
+            'finishing': '후가공',
+            'coating': '코팅',
+            'type': '종류',
+            'stand': '거치대',
+            'processing': '가공',
+            'folding': '접지'
+        }
+        
+        for key, value in slots.items():
+            if value and key in slot_names:
+                message += f"• {slot_names[key]}: {value}\n"
+        
+        message += "\n이 견적에 해당되는 내용이 맞으실까요?"
+        
+        return message
     
-    user_content = json.dumps({
-        "term": term, 
-        "facts": facts, 
-        "user_question": user_question
-    }, ensure_ascii=False)
+    def calculate_quote(self, slots: Dict) -> Dict:
+        """견적 계산 및 추천 인쇄소 TOP3 제공"""
+        print(f"견적 계산 시작 - 카테고리: {self.category}, 슬롯: {slots}")
+        print(f"등록된 인쇄소 수: {len(self.printshops)}")
+        
+        if not self.printshops:
+            print("등록된 인쇄소가 없습니다.")
+            return {
+                'error': '등록된 인쇄소가 없습니다.'
+            }
+        
+        quotes = []
+        
+        for printshop in self.printshops:
+            print(f"인쇄소 처리 중: {printshop.name}")
+            quote = self._calculate_single_quote(printshop, slots)
+            if quote:
+                quotes.append(quote)
+                print(f"견적 생성 성공: {printshop.name} - {quote['total_price']}원")
+            else:
+                print(f"견적 생성 실패: {printshop.name}")
+        
+        print(f"총 견적 수: {len(quotes)}")
+        
+        if not quotes:
+            return {
+                'error': '견적을 계산할 수 없습니다. 정보를 다시 확인해주세요.'
+            }
+        
+        # 추천 인쇄소 TOP3 선택 (가격, 품질, 거리 등 고려)
+        top3_recommendations = self._get_top3_recommendations(quotes, slots)
+        
+        return {
+            'category': self.category,
+            'slots': slots,
+            'quotes': quotes,
+            'top3_recommendations': top3_recommendations,
+            'total_available': len(quotes)
+        }
     
-    res = _chat_with_backoff(
-        model="gpt-4o-mini",
-        temperature=0.1,
-        max_tokens=200,
-        messages=[
-            {"role": "system", "content": sys_prompt},
-            {"role": "user", "content": user_content}
-        ]
-    )
-    
-    return (res.choices[0].message.content or "").strip()
-
-def cached_polish(term: str, facts: Dict, user_question: str = "") -> str:
-    """캐시된 용어 설명"""
-    cache_key = f"{term}:{user_question}"
-    if cache_key in _EXPLAIN_CACHE:
-        return _EXPLAIN_CACHE[cache_key]
-    
-    text = polish_explanation(term, facts, user_question)
-    _EXPLAIN_CACHE[cache_key] = text
-    return text
-
-def generate_quote_report(slots: Dict) -> str:
-    """최종 견적서 생성"""
-    item_type = slots.get("item_type", "BUSINESS_CARD")
-    item_names = {
-        "BUSINESS_CARD": "명함",
-        "STICKER": "스티커",
-        "BANNER": "배너",
-        "SIGN": "간판"
-    }
-    item_name = item_names.get(item_type, item_type)
-    
-    lines = [
-        f"📋 최종 견적서",
-        f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-        f"품목: {item_name}",
-        f"수량: {slots.get('quantity', '미정')}부",
-        f"사이즈: {slots.get('size', '미정')}",
-        f"재질: {slots.get('material', '미정')}",
-        f"마감: {slots.get('finishing', '미정')}",
-    ]
-    
-    if item_type == "BUSINESS_CARD":
-        lines.append(f"색상: {slots.get('color_mode', '미정')}")
-    elif item_type == "STICKER":
-        lines.append(f"형태: {slots.get('shape', '미정')}")
-        lines.append(f"라미네이팅: {slots.get('lamination', '미정')}")
-    elif item_type == "BANNER":
-        lines.append(f"아일렛: {slots.get('grommet', '미정')}")
-    
-    lines += [
-        f"납기: {slots.get('due_days', '미정')}일",
-        f"지역: {slots.get('region', '미정')}",
-        f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    ]
-    
-    return "\n".join(lines)
-
-def recommend_shops(slots: Dict) -> List[Dict]:
-    """조건에 맞는 최적의 인쇄소 추천 (상호명만)"""
-    from . import dummy_data
-    
-    item_type = slots.get("item_type", "BUSINESS_CARD")
-    region = slots.get("region", "")
-    material = slots.get("material", "")
-    finishing = slots.get("finishing", "")
-    due_days = slots.get("due_days", 0)
-    
-    print(f"DEBUG: Searching for item_type={item_type}, region={region}, material={material}, finishing={finishing}, due_days={due_days}")
-    
-    all_shops = dummy_data.get_all_shops()
-    print(f"DEBUG: Total shops available: {len(all_shops)}")
-    
-    scored_shops = []
-    
-    for shop in all_shops:
+    def _calculate_single_quote(self, printshop: PrintShop, slots: Dict) -> Optional[Dict]:
+        """단일 인쇄소 견적 계산"""
         try:
-            score = 0
-            shop_name = shop.get("shop_name", "Unknown")
+            # 기본 가격 (임시)
+            base_price = 1000
             
-            # 카테고리 매칭 (30점)
-            services = shop.get("services", {})
-            categories = services.get("categories", [])
-            if isinstance(categories, list):
-                item_type_lower = item_type.lower()
-                if any(item_type_lower in cat.lower() for cat in categories):
-                    score += 30
-                    print(f"DEBUG: {shop_name} - 카테고리 매칭 +30점")
+            # 옵션별 가격 추가
+            if 'paper' in slots:
+                base_price += 500
             
-            # 지역 매칭 (20점)
-            shop_location = shop.get("location", "")
-            if region and region in shop_location:
-                score += 20
-                print(f"DEBUG: {shop_name} - 지역 정확 매칭 +20점")
-            elif region and region.split('-')[0] in shop_location:
-                score += 10
-                print(f"DEBUG: {shop_name} - 지역 부분 매칭 +10점")
+            if 'finishing' in slots:
+                base_price += 1000
             
-            # 재질 매칭 (20점)
-            paper_types = shop.get("paper_types", {})
-            if isinstance(paper_types, dict) and material and material in paper_types:
-                score += 20
-                print(f"DEBUG: {shop_name} - 재질 매칭 +20점")
+            if 'coating' in slots:
+                base_price += 800
             
-            # 후가공 매칭 (15점)
-            post_processing = shop.get("post_processing", {})
-            coating_options = post_processing.get("coating", [])
-            if isinstance(coating_options, list) and finishing:
-                if finishing in coating_options:
-                    score += 15
-                    print(f"DEBUG: {shop_name} - 후가공 매칭 +15점")
+            # 수량 할인
+            quantity = slots.get('quantity', 1)
+            # 수량을 숫자로 변환 (예: "200부" -> 200)
+            if isinstance(quantity, str):
+                quantity = int(''.join(filter(str.isdigit, quantity)))
+            else:
+                quantity = int(quantity)
             
-            # 납기 매칭 (10점)
-            avg_production_time = services.get("avg_production_time", 999)
-            if due_days and isinstance(avg_production_time, (int, float)) and avg_production_time <= due_days:
-                score += 10
-                print(f"DEBUG: {shop_name} - 납기 매칭 +10점")
+            if quantity >= 100:
+                base_price = int(base_price * 0.9)  # 10% 할인
+            elif quantity >= 500:
+                base_price = int(base_price * 0.8)  # 20% 할인
             
-            # 평점 보너스 (5점)
-            rating = shop.get("rating", 0)
-            if isinstance(rating, (int, float)):
-                score += rating * 5
-                print(f"DEBUG: {shop_name} - 평점 보너스 +{rating * 5}점 (총점: {score})")
+            total_price = base_price * quantity
             
-            # 최소 점수 조건 완화 - 모든 인쇄소를 추천 대상으로 포함
-            scored_shops.append({
-                "shop_name": shop_name,
-                "match_score": score
-            })
-            print(f"DEBUG: {shop_name} - 추천 목록에 추가됨 (점수: {score})")
-            
+            return {
+                'printshop_name': printshop.name,
+                'printshop_phone': printshop.phone,
+                'base_price': base_price,
+                'quantity': quantity,
+                'total_price': total_price,
+                'production_time': printshop.production_time,
+                'delivery_options': printshop.delivery_options,
+                'is_verified': printshop.is_verified
+            }
         except Exception as e:
-            print(f"Error processing shop {shop.get('shop_name', 'Unknown')}: {e}")
-            continue
+            return None
     
-    print(f"DEBUG: 최종 추천 인쇄소 수: {len(scored_shops)}")
+    def _get_top3_recommendations(self, quotes: List[Dict], slots: Dict) -> List[Dict]:
+        """추천 인쇄소 TOP3 선택 (가격, 품질, 서비스 등 종합 고려)"""
+        if not quotes:
+            return []
+        
+        # 각 인쇄소에 점수 부여
+        scored_quotes = []
+        for quote in quotes:
+            score = self._calculate_recommendation_score(quote, slots)
+            scored_quotes.append({
+                **quote,
+                'recommendation_score': score,
+                'recommendation_reason': self._get_recommendation_reason(quote, score)
+            })
+        
+        # 점수순으로 정렬하여 TOP3 선택
+        sorted_quotes = sorted(scored_quotes, key=lambda x: x['recommendation_score'], reverse=True)
+        return sorted_quotes[:3]
     
-    # 점수순으로 정렬하고 최고점 1개 반환
-    scored_shops.sort(key=lambda x: x["match_score"], reverse=True)
-    return scored_shops[:1]
-
-def format_shop_recommendation(shop: Dict) -> str:
-    """인쇄소 추천 정보 포맷팅"""
-    return f"🏢 {shop['shop_name']}"
+    def _calculate_recommendation_score(self, quote: Dict, slots: Dict) -> float:
+        """추천 점수 계산 (0-100점)"""
+        score = 0.0
+        
+        # 1. 가격 점수 (40점) - 낮을수록 높은 점수
+        total_price = quote.get('total_price', 0)
+        if total_price > 0:
+            # 가격이 낮을수록 높은 점수 (최대 40점)
+            price_score = max(0, 40 - (total_price / 1000))  # 1000원당 1점 차감
+            score += price_score
+        
+        # 2. 품질 점수 (30점) - 인증된 인쇄소 우대
+        if quote.get('is_verified', False):
+            score += 30
+        else:
+            score += 15
+        
+        # 3. 서비스 점수 (20점) - 배송 옵션, 제작 기간 등
+        delivery_options = quote.get('delivery_options', '')
+        if '당일' in delivery_options or '익일' in delivery_options:
+            score += 20
+        elif '택배' in delivery_options:
+            score += 15
+        else:
+            score += 10
+        
+        # 4. 수량 할인 점수 (10점) - 대량 주문 시 할인율 고려
+        quantity = slots.get('quantity', 0)
+        if isinstance(quantity, str):
+            quantity = int(''.join(filter(str.isdigit, quantity)))
+        
+        if quantity >= 500:
+            score += 10
+        elif quantity >= 200:
+            score += 7
+        elif quantity >= 100:
+            score += 5
+        
+        return min(100, score)
+    
+    def _get_recommendation_reason(self, quote: Dict, score: float) -> str:
+        """추천 이유 생성"""
+        reasons = []
+        
+        if quote.get('is_verified', False):
+            reasons.append("인증된 인쇄소")
+        
+        total_price = quote.get('total_price', 0)
+        if total_price < 50000:
+            reasons.append("합리적인 가격")
+        elif total_price < 100000:
+            reasons.append("경제적인 가격")
+        
+        delivery_options = quote.get('delivery_options', '')
+        if '당일' in delivery_options:
+            reasons.append("당일 배송 가능")
+        elif '익일' in delivery_options:
+            reasons.append("익일 배송 가능")
+        
+        if not reasons:
+            reasons.append("안정적인 서비스")
+        
+        return ", ".join(reasons)
+    
+    def _format_final_quote(self, quote_result: Dict) -> str:
+        """최종 견적 리포트 포맷팅"""
+        if 'error' in quote_result:
+            return f"죄송합니다. {quote_result['error']}"
+        
+        response = f"📋 {self.category} 최종 견적 리포트\n"
+        response += "=" * 50 + "\n\n"
+        
+        # 수집된 정보 요약
+        slots = quote_result['slots']
+        response += "📝 주문 정보:\n"
+        slot_names = {
+            'quantity': '수량',
+            'paper': '용지',
+            'size': '사이즈',
+            'printing': '인쇄 방식',
+            'finishing': '후가공',
+            'coating': '코팅',
+            'type': '종류',
+            'stand': '거치대',
+            'processing': '가공',
+            'folding': '접지'
+        }
+        
+        for key, value in slots.items():
+            if value and key in slot_names:
+                response += f"• {slot_names[key]}: {value}\n"
+        
+        response += f"\n📊 견적 현황:\n"
+        response += f"• 총 {quote_result.get('total_available', 0)}개 인쇄소에서 견적 가능\n"
+        response += f"• 가격대: {self._get_price_range(quote_result['quotes'])}\n\n"
+        
+        response += "🏆 추천 인쇄소 TOP3:\n"
+        response += "-" * 30 + "\n"
+        
+        # TOP3 추천
+        top3_recommendations = quote_result.get('top3_recommendations', [])
+        for i, quote in enumerate(top3_recommendations, 1):
+            response += f"{i}위. {quote['printshop_name']}\n"
+            response += f"   ⭐ 추천 점수: {quote.get('recommendation_score', 0):.1f}점\n"
+            response += f"   💡 추천 이유: {quote.get('recommendation_reason', '안정적인 서비스')}\n"
+            response += f"   📞 연락처: {quote['printshop_phone']}\n"
+            response += f"   💰 단가: {quote['base_price']:,}원\n"
+            response += f"   📦 총액: {quote['total_price']:,}원\n"
+            response += f"   ⏰ 제작기간: {quote['production_time']}\n"
+            response += f"   🚚 배송: {quote['delivery_options']}\n"
+            if quote.get('is_verified', False):
+                response += f"   ✅ 인증된 인쇄소\n"
+            response += "\n"
+        
+        response += "💡 다음 단계:\n"
+        response += "• 추천 인쇄소에 직접 연락하여 주문 진행\n"
+        response += "• 추가 문의사항이 있으시면 언제든 말씀해주세요!\n"
+        response += "• 다른 옵션으로 견적을 다시 받고 싶으시면 '다시 견적받기'라고 말씀해주세요."
+        
+        return response
+    
+    def _get_price_range(self, quotes: List[Dict]) -> str:
+        """가격대 범위 계산"""
+        if not quotes:
+            return "견적 정보 없음"
+        
+        prices = [quote.get('total_price', 0) for quote in quotes]
+        min_price = min(prices)
+        max_price = max(prices)
+        
+        if min_price == max_price:
+            return f"{min_price:,}원"
+        else:
+            return f"{min_price:,}원 ~ {max_price:,}원"

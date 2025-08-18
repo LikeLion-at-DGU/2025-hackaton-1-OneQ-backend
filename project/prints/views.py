@@ -13,6 +13,7 @@ from .serializers import (
     PrintShopUpdateSerializer, PrintShopPasswordVerifySerializer, ChatSessionSerializer,
     PrintShopStep1Serializer, PrintShopStep2Serializer, PrintShopFinalizeSerializer
 )
+from .services.ai import PrintShopAIService
 from datetime import datetime
 import uuid
 
@@ -189,7 +190,27 @@ def printshop_search(request):
 def chatsession_create(request):
     """채팅 세션 생성"""
     session_id = str(uuid.uuid4())
-    chat_session = ChatSession.objects.create(session_id=session_id)
+    category = request.data.get('category', '명함')  # 기본값: 명함
+    
+    # 카테고리별 AI 서비스 초기화
+    ai_service = PrintShopAIService(category)
+    
+    # 초기 메시지 생성
+    initial_message = ai_service.get_category_introduction()
+    
+    chat_session = ChatSession.objects.create(
+        session_id=session_id,
+        slots={'category': category}  # 카테고리 정보 저장
+    )
+    
+    # 초기 메시지를 히스토리에 추가
+    chat_session.history.append({
+        'role': 'assistant',
+        'content': initial_message,
+        'timestamp': datetime.now().isoformat()
+    })
+    
+    chat_session.save()
     serializer = ChatSessionSerializer(chat_session)
     return Response(serializer.data, status=status.HTTP_201_CREATED)
 
@@ -198,19 +219,41 @@ def chatsession_send_message(request, session_id):
     """채팅 메시지 전송"""
     chat_session = get_object_or_404(ChatSession, session_id=session_id)
     
-    # 사용자 메시지를 히스토리에 추가
+    # 사용자 메시지
     user_message = request.data.get('message', '')
+    
+    # 사용자 메시지를 히스토리에 추가
     chat_session.history.append({
         'role': 'user',
         'content': user_message,
         'timestamp': datetime.now().isoformat()
     })
     
-    # AI 응답 (임시)
-    ai_response = f"안녕하세요! {user_message}에 대한 견적을 도와드리겠습니다. 어떤 인쇄물을 원하시나요?"
+    # AI 서비스 초기화 (기존 대화 히스토리 전달)
+    category = chat_session.slots.get('category', '명함')
+    ai_service = PrintShopAIService(category)
+    
+    # 기존 대화 히스토리를 AI 서비스에 로드
+    for msg in chat_session.history:
+        ai_service.conversation_manager.add_message(msg['role'], msg['content'])
+    
+    # 기존 슬롯 정보를 AI 서비스에 로드
+    ai_service.conversation_manager.current_slots = chat_session.slots.copy()
+    
+    # AI 응답 생성
+    print(f"사용자 메시지: {user_message}")
+    print(f"현재 슬롯: {chat_session.slots}")
+    
+    ai_response = ai_service.process_user_message(user_message, chat_session.slots)
+    print(f"AI 응답: {ai_response}")
+    
+    # 슬롯 정보 업데이트
+    chat_session.slots = ai_response.get('slots', chat_session.slots)
+    
+    # AI 응답을 히스토리에 추가
     chat_session.history.append({
         'role': 'assistant',
-        'content': ai_response,
+        'content': ai_response['message'],
         'timestamp': datetime.now().isoformat()
     })
     
