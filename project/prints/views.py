@@ -16,6 +16,8 @@ from .serializers import (
 from .services.ai import PrintShopAIService
 from datetime import datetime
 import uuid
+from rest_framework.views import APIView
+from .services.oneqscore import score_and_rank
 
 # ===== 단계별 인쇄소 등록 Views =====
 
@@ -314,3 +316,32 @@ def printshop_verification_status(request, pk):
         'registration_status': printshop.registration_status,
         'has_business_license': bool(printshop.business_license)
     })
+
+
+class PrintShopRankAPIView(APIView):
+    """
+    POST /api/printshops/rank
+    body 예시:
+    {
+        "category": "명함",
+        "quantity": 300,
+        "size": "90x50mm",
+        "printing": "양면 컬러",
+        "finishing": "무광",
+        "due_days": 3,
+        "region": "서울-중구",
+        "budget": 150000
+    }
+    """
+    def post(self, request):
+        try:
+            # 카테고리 필터와 동일 기준의 후보 셋
+            all_printshops = PrintShop.objects.filter(
+                is_active=True,
+                registration_status='completed'
+            )
+            candidates = [s for s in all_printshops if (request.data.get("category") or "명함") in (s.available_categories or [])]
+            result = score_and_rank(request.data, candidates)
+            return Response(result, status=200)
+        except Exception as e:
+            return Response({"detail": str(e)}, status=400)

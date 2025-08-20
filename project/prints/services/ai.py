@@ -6,6 +6,63 @@ from ..models import PrintShop
 from .gpt_client import GPTClient
 from .db_formatter import DBFormatter
 from .conversation_manager import ConversationManager
+from .oneqscore import score_and_rank
+
+def _to_int(v, default=0):
+    if isinstance(v, int): 
+        return v
+    s = str(v or "")
+    s = re.sub(r"[^\d]", "", s)
+    return int(s) if s else default
+
+def _to_money(v, default=0):
+    """
+    '15만원', '120,000원', '7만 5천원', '200000' 등을 정규화 → 원 단위 정수
+    너무 복잡하게 가지 않고, 대표 케이스만 안전 처리
+    """
+    if v is None:
+        return default
+    s = str(v).strip().replace(",", "").replace(" ", "")
+    # 완전 숫자만: 그대로
+    if s.isdigit():
+        return int(s)
+    # '만원' 단위
+    m = re.match(r"^(\d+)(만|만원)$", s)
+    if m:
+        return int(m.group(1)) * 10000
+    # '천원'
+    m = re.match(r"^(\d+)(천|천원)$", s)
+    if m:
+        return int(m.group(1)) * 1000
+    # '원' 접미사
+    m = re.match(r"^(\d+)원$", s)
+    if m:
+        return int(m.group(1))
+    # 섞여있을 때 숫자만 추출 (마지막 fallback)
+    digits = re.sub(r"[^\d]", "", s)
+    return int(digits) if digits else default
+
+def _norm_region(v: str) -> str:
+    if not v:
+        return ""
+    s = str(v).strip().replace(" ", "")
+    s = s.replace("/", "-").replace("_", "-")
+    return s
+
+def _coerce_numbers(slots: Dict) -> Dict:
+    """
+    GPT 응답에 섞여 들어온 문자열 값을 안전한 숫자/정규화 값으로 강제.
+    """
+    out = dict(slots or {})
+    if 'quantity' in out:
+        out['quantity'] = _to_int(out['quantity'], 1)
+    if 'due_days' in out:
+        out['due_days'] = _to_int(out['due_days'], 3)
+    if 'budget' in out:
+        out['budget'] = _to_money(out['budget'], 0)
+    if 'region' in out:
+        out['region'] = _norm_region(out['region'])
+    return out
 
 class PrintShopAIService:
     """인쇄소 DB 기반 AI 챗봇 서비스 (GPT-4-mini 통합)"""
@@ -108,12 +165,10 @@ class PrintShopAIService:
             '브로슈어': ['paper', 'folding', 'size', 'quantity']
         }
         
-        # 현재 카테고리의 순서 가져오기기
-        flow = category_flows.get(self.category, [])
-        if flow:
-            return self._get_question_for_slot(flow[0])
-        
-        return "어떤 정보가 필요하신가요?"
+        # 현재 카테고리의 순서 가져오기
+        common_tail = ['due_days', 'region', 'budget']
+        flow = category_flows.get(self.category, []) + common_tail
+        return self._get_question_for_slot(flow[0]) if flow else "어떤 정보가 필요하신가요?"
     
     def _get_question_for_slot(self, slot: str) -> str:
         """슬롯별 질문 생성 (DB 정보 포함)"""
@@ -127,7 +182,10 @@ class PrintShopAIService:
             'type': self._get_type_question(),
             'stand': self._get_stand_question(),
             'processing': self._get_processing_question(),
-            'folding': self._get_folding_question()
+            'folding': self._get_folding_question(),
+            'due_days': '납기는 며칠 후까지 필요하세요? (예: 1~7일, 기본 3일)',
+            'region':   '수령/배송 지역은 어디인가요? (예: 서울-중구 / 없으면 “없음”)',
+            'budget':   '예산이 있으시면 알려주세요. (예: 15만원 / 없으면 “없음”)'
         }
         
         return questions.get(slot, f'{slot}에 대해 알려주세요.')
@@ -384,8 +442,8 @@ class PrintShopAIService:
             '현수막': ['size', 'quantity', 'processing'],
             '브로슈어': ['paper', 'folding', 'size', 'quantity']
         }
-        
-        required = required_slots.get(self.category, [])
+        common_tail = ['due_days', 'region', 'budget']
+        required = required_slots.get(self.category, []) + common_tail
         missing_slots = self.conversation_manager.get_missing_slots(required)
         
         prompt = f"""
@@ -466,14 +524,15 @@ JSON 형태로 응답해주세요:
         
         # 슬롯 업데이트
         if 'slots' in response and response['slots']:
-            current_slots.update(response['slots'])
-            self.conversation_manager.update_slots(response['slots'])
-            print(f"슬롯 업데이트: {response['slots']}")
+            coerced = _coerce_numbers(response['slots']) # 숫자/금액/지역 정규화
+            current_slots.update(coerced)
+            self.conversation_manager.update_slots(coerced)
+            print(f"슬롯 업데이트: {coerced}")
         
         # 대화 히스토리에 응답 추가 (중복 방지)
         if 'message' in response:
             if not self.conversation_manager.conversation_history or \
-               self.conversation_manager.conversation_history[-1]['content'] != response['message']:
+                self.conversation_manager.conversation_history[-1]['content'] != response['message']:
                 self.conversation_manager.add_message('assistant', response['message'])
         
         # 응답이 없거나 잘못된 경우 간단한 폴백
@@ -525,8 +584,8 @@ JSON 형태로 응답해주세요:
             '현수막': ['size', 'quantity', 'processing'],
             '브로슈어': ['paper', 'folding', 'size', 'quantity']
         }
-        
-        flow = category_flows.get(self.category, [])
+        common_tail = ['due_days', 'region', 'budget']
+        flow = category_flows.get(self.category, []) + common_tail
         
         for slot in flow:
             if slot not in slots or not slots[slot]:
@@ -548,7 +607,10 @@ JSON 형태로 응답해주세요:
             'type': '종류',
             'stand': '거치대',
             'processing': '가공',
-            'folding': '접지'
+            'folding': '접지',
+            'due_days': '납기(일)',
+            'region': '지역',
+            'budget': '예산(원)',
         }
         
         for key, value in slots.items():
@@ -560,42 +622,62 @@ JSON 형태로 응답해주세요:
         return message
     
     def calculate_quote(self, slots: Dict) -> Dict:
-        """견적 계산 및 추천 인쇄소 TOP3 제공"""
-        print(f"견적 계산 시작 - 카테고리: {self.category}, 슬롯: {slots}")
+        """원큐스코어(가격40+납기30+작업30) 기반 TOP3 추천 + 전체 후보 리스팅"""
+        print(f"견적 계산(ONEQ SCORE) - 카테고리: {self.category}, 슬롯: {slots}")
         print(f"등록된 인쇄소 수: {len(self.printshops)}")
-        
+
         if not self.printshops:
-            print("등록된 인쇄소가 없습니다.")
-            return {
-                'error': '등록된 인쇄소가 없습니다.'
-            }
-        
+            return {'error': '등록된 인쇄소가 없습니다.'}
+
+        # 카테고리 정보가 slots['category']에 없을 수 있으니 보강
+        slots = dict(slots or {})
+        slots.setdefault("category", self.category)
+
+        ranked = score_and_rank(slots, self.printshops)
+        if ranked["count"] == 0:
+            return {'error': '조건에 맞는 인쇄소가 없습니다. 정보를 다시 확인해주세요.'}
+
+        # 기존 포맷과 호환되게 가공
         quotes = []
-        
-        for printshop in self.printshops:
-            print(f"인쇄소 처리 중: {printshop.name}")
-            quote = self._calculate_single_quote(printshop, slots)
-            if quote:
-                quotes.append(quote)
-                print(f"견적 생성 성공: {printshop.name} - {quote['total_price']}원")
-            else:
-                print(f"견적 생성 실패: {printshop.name}")
-        
-        print(f"총 견적 수: {len(quotes)}")
-        
-        if not quotes:
-            return {
-                'error': '견적을 계산할 수 없습니다. 정보를 다시 확인해주세요.'
-            }
-        
-        # 추천 인쇄소 TOP3 선택 (가격, 품질, 거리 등 고려)
-        top3_recommendations = self._get_top3_recommendations(quotes, slots)
-        
+        for r in ranked["all"]:
+            quotes.append({
+                'printshop_name': r['shop_name'],
+                'printshop_phone': r['phone'],
+                'base_price': int(r['total_price'] / max(1, _to_int(slots.get("quantity"), 1))),  # 대략 단가
+                'quantity': _to_int(slots.get("quantity"), 1),
+                'total_price': r['total_price'],
+                'production_time': r['production_time'],
+                'delivery_options': r['delivery_options'],
+                'is_verified': r['is_verified'],
+                # 디버깅/표시용
+                'oneq_scores': r['scores'],   # {'price':..,'due':..,'work':..,'oneq_total':..}
+                'eta_hours': r['eta_hours'],
+            })
+
+        # TOP3: 기존 키 사용(recommendation_score/_reason)
+        top3 = []
+        for r in ranked["items"]:
+            score = r['scores']['oneq_total']
+            pr, du, wk = r['scores']['price'], r['scores']['due'], r['scores']['work']
+            reason = f"가격 {pr:.0f} / 납기 {du:.0f} / 작업 {wk:.0f}"
+            top3.append({
+                'printshop_name': r['shop_name'],
+                'printshop_phone': r['phone'],
+                'base_price': int(r['total_price'] / max(1, _to_int(slots.get("quantity"), 1))),
+                'quantity': _to_int(slots.get("quantity"), 1),
+                'total_price': r['total_price'],
+                'production_time': r['production_time'],
+                'delivery_options': r['delivery_options'],
+                'is_verified': r['is_verified'],
+                'recommendation_score': score,            # 기존 포맷 호환
+                'recommendation_reason': reason
+            })
+
         return {
             'category': self.category,
             'slots': slots,
             'quotes': quotes,
-            'top3_recommendations': top3_recommendations,
+            'top3_recommendations': top3,
             'total_available': len(quotes)
         }
     

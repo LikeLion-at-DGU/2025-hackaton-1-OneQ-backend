@@ -25,4 +25,6 @@ urlpatterns = [
     # === 채팅 세션 ===
     path('chat/sessions/', views.chatsession_create, name='chatsession_create'),
     path('chat/sessions/<str:session_id>/send/', views.chatsession_send_message, name='chatsession_send_message'),
+
+    path('printshops/rank', views.PrintShopRankAPIView.as_view(), name='printshop_rank'),
 ]
