@@ -112,7 +112,7 @@ class PrintShopAIService:
         combined_info = {} # 카테고리별 정보를 저장할 딕셔너리
         
         category_fields = { # 각 카테고리마다 필요한 DB 필드들을 정의
-            '명함': ['business_card_papers', 'business_card_quantities', 'business_card_printing', 'business_card_finishing'],
+            '명함': ['business_card_sizes', 'business_card_papers', 'business_card_quantities', 'business_card_printing', 'business_card_finishing'],
             '배너': ['banner_sizes', 'banner_stands', 'banner_quantities'],
             '포스터': ['poster_papers', 'poster_coating', 'poster_quantities'],
             '스티커': ['sticker_types', 'sticker_quantities', 'sticker_sizes'],
@@ -157,7 +157,7 @@ class PrintShopAIService:
         """첫 번째 질문 생성"""
         # 각 카테고리마다 필요한 정보를 수집하는 순서
         category_flows = {
-            '명함': ['quantity', 'paper', 'printing', 'finishing'],
+            '명함': ['quantity', 'size', 'paper', 'printing', 'finishing'],
             '배너': ['size', 'quantity', 'stand'],
             '포스터': ['paper', 'size', 'quantity', 'coating'],
             '스티커': ['type', 'size', 'quantity'],
@@ -272,6 +272,7 @@ class PrintShopAIService:
         """DB에서 사이즈 정보 추출"""
         sizes = []
         size_fields = {
+            '명함': 'business_card_sizes',
             '배너': 'banner_sizes',
             '스티커': 'sticker_sizes',
             '현수막': 'banner_large_sizes',
@@ -435,7 +436,7 @@ class PrintShopAIService:
         """GPT 프롬프트 생성"""
         # 카테고리별 필수 슬롯 정의
         required_slots = {
-            '명함': ['quantity', 'paper', 'printing', 'finishing'],
+            '명함': ['quantity', 'size', 'paper', 'printing', 'finishing'],
             '배너': ['size', 'quantity', 'stand'],
             '포스터': ['paper', 'size', 'quantity', 'coating'],
             '스티커': ['type', 'size', 'quantity'],
@@ -577,7 +578,7 @@ JSON 형태로 응답해주세요:
     def _get_next_question(self, slots: Dict) -> str:
         """다음 질문 생성"""
         category_flows = {
-            '명함': ['quantity', 'paper', 'printing', 'finishing'],
+            '명함': ['quantity', 'size', 'paper', 'printing', 'finishing'],
             '배너': ['size', 'quantity', 'stand'],
             '포스터': ['paper', 'size', 'quantity', 'coating'],
             '스티커': ['type', 'size', 'quantity'],

@@ -89,7 +89,7 @@ class PrintShopStep2Serializer(serializers.ModelSerializer):
 class PrintShopFinalizeSerializer(serializers.ModelSerializer):
     """3단계: 최종 등록 Serializer"""
     password = serializers.CharField(write_only=True, min_length=6)
-    business_license = serializers.FileField(required=True)
+    business_license = serializers.FileField(required=False, allow_null=True, allow_empty_file=True)
     
     class Meta:
         model = PrintShop
@@ -101,7 +101,9 @@ class PrintShopFinalizeSerializer(serializers.ModelSerializer):
         
         # 최종 데이터 저장
         instance.password = validated_data['password']
-        instance.business_license = validated_data['business_license']
+        # business_license가 제공된 경우에만 저장
+        if 'business_license' in validated_data:
+            instance.business_license = validated_data['business_license']
         instance.registration_status = 'completed'
         instance.is_active = True
         
@@ -119,7 +121,7 @@ class PrintShopFinalizeSerializer(serializers.ModelSerializer):
 class PrintShopCreateSerializer(serializers.ModelSerializer):
     """인쇄소 등록용 Serializer (한 번에 모든 정보)"""
     password = serializers.CharField(write_only=True, min_length=6)
-    business_license = serializers.FileField(required=True)
+    business_license = serializers.FileField(required=False, allow_null=True, allow_empty_file=True)
     
     class Meta:
         model = PrintShop

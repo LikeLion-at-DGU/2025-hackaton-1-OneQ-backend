@@ -118,7 +118,7 @@ def printshop_list(request):
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 @api_view(['POST'])
-@parser_classes([MultiPartParser, FormParser])
+@parser_classes([MultiPartParser, FormParser, JSONParser])
 def printshop_create(request):
     """인쇄소 등록 (한 번에 모든 정보)"""
     serializer = PrintShopCreateSerializer(data=request.data)
