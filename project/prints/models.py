@@ -51,6 +51,7 @@ class PrintShop(models.Model):
     bulk_discount = models.TextField(blank=True, verbose_name="대량 구매 할인율")
     
     # === 명함 구조화 정보 (각 섹션별 텍스트 필드) ===
+    business_card_sizes = models.TextField(blank=True, verbose_name="명함 사이즈 종류 & 설명")
     business_card_papers = models.TextField(blank=True, verbose_name="명함 용지 종류 & 설명")
     business_card_quantities = models.TextField(blank=True, verbose_name="명함 수량 정보")
     business_card_printing = models.TextField(blank=True, verbose_name="명함 인쇄 방식")
@@ -87,26 +88,26 @@ class PrintShop(models.Model):
     password = models.CharField(max_length=128, blank=True, verbose_name="수정 비밀번호")
     
     # === 등록 상태 관리 ===
-    temp_step1_data = models.JSONField(default=dict, blank=True, verbose_name="1단계 임시 데이터")
-    temp_step2_data = models.JSONField(default=dict, blank=True, verbose_name="2단계 임시 데이터")
+    temp_step1_data = models.JSONField(default=dict, blank=True, verbose_name="1단계 임시 데이터") # 1단계에서 입력한 기본 정보 임시 저장
+    temp_step2_data = models.JSONField(default=dict, blank=True, verbose_name="2단계 임시 데이터") # 1단계 + 2단계 데이터를 합쳐서 임시 저장장
     registration_status = models.CharField(max_length=20, default='step1', verbose_name="등록 단계",
                                          choices=[
-                                             ('step1', '1단계: 기본 정보'),
-                                             ('step2', '2단계: 상세 정보'),
-                                             ('completed', '등록 완료')
-                                         ])
+                                             ('step1', '1단계: 기본 정보'), # 1단계 완료
+                                             ('step2', '2단계: 상세 정보'), # 2단계 완료
+                                             ('completed', '등록 완료') # 3단계 완료
+                                         ]) # 현재 등록 진행 상황 추적적
     
     # === 상태 관리 ===
-    is_verified = models.BooleanField(default=False, verbose_name="인증 완료")
-    is_active = models.BooleanField(default=False, verbose_name="활성화")
+    is_verified = models.BooleanField(default=False, verbose_name="인증 완료") # 사업자등록증 인증 완료 여부
+    is_active = models.BooleanField(default=False, verbose_name="활성화") # 인쇄소 활성화 여부 True시 정상 운영 중인 인쇄소소
     
     # === 시간 정보 ===
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="등록일")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="수정일")
     
     class Meta:
-        verbose_name = "인쇄소"
-        verbose_name_plural = "인쇄소들"
+        verbose_name = "인쇄소" # admin에서 볼 때 보여지는 이름
+        verbose_name_plural = "인쇄소들" # admin에서 볼 때 보여지는 이름 복수형
     
     def __str__(self):
-        return self.name or f"임시 인쇄소 ({self.id})"
+        return self.name or f"임시 인쇄소 ({self.id})" # 인쇄소 이름이 없으면 임시 인쇄소 (id) 로 표시
