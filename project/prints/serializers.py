@@ -88,12 +88,25 @@ class PrintShopStep2Serializer(serializers.ModelSerializer):
 
 class PrintShopFinalizeSerializer(serializers.ModelSerializer):
     """3단계: 최종 등록 Serializer"""
-    password = serializers.CharField(write_only=True, min_length=6)
-    business_license = serializers.FileField(required=False, allow_null=True, allow_empty_file=True)
+    password = serializers.CharField(write_only=True, min_length=4, max_length=20)
+    business_license = serializers.FileField(required=True, allow_null=False, allow_empty_file=False)
     
     class Meta:
         model = PrintShop
         fields = ['password', 'business_license']
+    
+    def validate_password(self, value):
+        """비밀번호 유효성 검사: 4-20자, 특수문자 1개 이상 필수"""
+        if len(value) < 4 or len(value) > 20:
+            raise serializers.ValidationError("비밀번호는 4자 이상 20자 이하여야 합니다.")
+        
+        # 특수문자 포함 여부 확인
+        import re
+        special_chars = re.findall(r'[!@#$%^&*(),.?":{}|<>]', value)
+        if not special_chars:
+            raise serializers.ValidationError("비밀번호에 특수문자를 1개 이상 포함해야 합니다.")
+        
+        return value
     
     def update(self, instance, validated_data):
         # 비밀번호 해싱
@@ -101,9 +114,7 @@ class PrintShopFinalizeSerializer(serializers.ModelSerializer):
         
         # 최종 데이터 저장
         instance.password = validated_data['password']
-        # business_license가 제공된 경우에만 저장
-        if 'business_license' in validated_data:
-            instance.business_license = validated_data['business_license']
+        instance.business_license = validated_data['business_license']  # 필수이므로 항상 저장
         instance.registration_status = 'completed'
         instance.is_active = True
         
@@ -120,8 +131,8 @@ class PrintShopFinalizeSerializer(serializers.ModelSerializer):
 # 관리자 페이지 / 테스트용 샘플 데이터 입력용
 class PrintShopCreateSerializer(serializers.ModelSerializer):
     """인쇄소 등록용 Serializer (한 번에 모든 정보)"""
-    password = serializers.CharField(write_only=True, min_length=6)
-    business_license = serializers.FileField(required=False, allow_null=True, allow_empty_file=True)
+    password = serializers.CharField(write_only=True, min_length=4, max_length=20)
+    business_license = serializers.FileField(required=True, allow_null=False, allow_empty_file=False)
     
     class Meta:
         model = PrintShop
@@ -148,6 +159,19 @@ class PrintShopCreateSerializer(serializers.ModelSerializer):
             # 행정 자료
             'business_license', 'password'
         ]
+    
+    def validate_password(self, value):
+        """비밀번호 유효성 검사: 4-20자, 특수문자 1개 이상 필수"""
+        if len(value) < 4 or len(value) > 20:
+            raise serializers.ValidationError("비밀번호는 4자 이상 20자 이하여야 합니다.")
+        
+        # 특수문자 포함 여부 확인
+        import re
+        special_chars = re.findall(r'[!@#$%^&*(),.?":{}|<>]', value)
+        if not special_chars:
+            raise serializers.ValidationError("비밀번호에 특수문자를 1개 이상 포함해야 합니다.")
+        
+        return value
     
     def create(self, validated_data):
         # 비밀번호 해싱
@@ -191,6 +215,19 @@ class PrintShopUpdateSerializer(serializers.ModelSerializer):
         print_shop = self.instance
         if not check_password(value, print_shop.password):
             raise serializers.ValidationError("현재 비밀번호가 올바르지 않습니다.")
+        return value
+    
+    def validate_new_password(self, value):
+        """새 비밀번호 유효성 검사: 4-20자, 특수문자 1개 이상 필수"""
+        if len(value) < 4 or len(value) > 20:
+            raise serializers.ValidationError("비밀번호는 4자 이상 20자 이하여야 합니다.")
+        
+        # 특수문자 포함 여부 확인
+        import re
+        special_chars = re.findall(r'[!@#$%^&*(),.?":{}|<>]', value)
+        if not special_chars:
+            raise serializers.ValidationError("비밀번호에 특수문자를 1개 이상 포함해야 합니다.")
+        
         return value
     
     def update(self, instance, validated_data):
