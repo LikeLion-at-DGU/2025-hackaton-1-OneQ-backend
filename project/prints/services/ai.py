@@ -247,10 +247,9 @@ class PrintShopAIService:
             return f"접지 방식은 어떤 걸 원하시나요? ({', '.join(folding_options)})"
         return "접지 방식은 어떤 걸 원하시나요?"
     
-    # DB에서 정보 추출 함수(수정 필요)
+    # DB에서 정보 추출 함수 (자연어 처리 기반)
     def _extract_papers_from_db(self) -> List[str]:
-        """DB에서 용지 정보 추출"""
-        papers = []
+        """DB에서 용지 정보 추출 (GPT 활용)"""
         paper_fields = {
             '명함': 'business_card_papers',
             '포스터': 'poster_papers',
@@ -258,19 +257,18 @@ class PrintShopAIService:
         }
         
         field = paper_fields.get(self.category)
-        if field and field in self.category_info:
-            content = self.category_info[field]
-            # 해당 필드의 전체 텍스트 내용 가져옴
-            paper_patterns = ['반누보', '휘라레', '스타드림퀼츠', '아트지', '스노우지', '랑데부', '양상블', '무광', '유광', '백상지'] # 여기 단어에 있는 것만 추출하는 하드코딩 방식이라 수정 필요
-            for pattern in paper_patterns:
-                if pattern in content:
-                    papers.append(pattern)
+        if not field or field not in self.category_info:
+            return []
         
-        return list(set(papers))  # 중복 제거
+        content = self.category_info[field]
+        if not content:
+            return []
+        
+        # GPT를 활용해서 용지 옵션 추출
+        return self._extract_options_with_gpt(content, "용지")
     
     def _extract_sizes_from_db(self) -> List[str]:
-        """DB에서 사이즈 정보 추출"""
-        sizes = []
+        """DB에서 사이즈 정보 추출 (GPT 활용)"""
         size_fields = {
             '명함': 'business_card_sizes',
             '배너': 'banner_sizes',
@@ -280,119 +278,190 @@ class PrintShopAIService:
         }
         
         field = size_fields.get(self.category)
-        if field and field in self.category_info:
-            content = self.category_info[field]
-            # 사이즈 추출
-            size_patterns = ['A4', 'A5', 'A3', 'B4', 'B5', '600×1800mm', '150×300mm', '200×400mm'] # 이것도 하드코딩 정규표현식으로 수정?
-            for pattern in size_patterns:
-                if pattern in content:
-                    sizes.append(pattern)
-                else:
-                    sizes.append(pattern)
+        if not field or field not in self.category_info:
+            return []
         
-        return list(set(sizes))
+        content = self.category_info[field]
+        if not content:
+            return []
+        
+        # GPT를 활용해서 사이즈 옵션 추출
+        return self._extract_options_with_gpt(content, "사이즈")
     
     def _extract_finishing_from_db(self) -> List[str]:
-        """DB에서 후가공 정보 추출"""
-        finishing = []
+        """DB에서 후가공 정보 추출 (GPT 활용)"""
         finishing_fields = {
             '명함': 'business_card_finishing'
         }
         
         field = finishing_fields.get(self.category)
-        if field and field in self.category_info:
-            content = self.category_info[field]
-            finishing_patterns = ['형압', '박', '오시', '절취선', '도무송', '넘버링'] # 하드코딩
-            for pattern in finishing_patterns:
-                if pattern in content:
-                    finishing.append(pattern)
+        if not field or field not in self.category_info:
+            return []
         
-        return list(set(finishing))
+        content = self.category_info[field]
+        if not content:
+            return []
+        
+        # GPT를 활용해서 후가공 옵션 추출
+        return self._extract_options_with_gpt(content, "후가공")
     
     def _extract_coating_from_db(self) -> List[str]:
-        """DB에서 코팅 정보 추출"""
-        coating = []
+        """DB에서 코팅 정보 추출 (GPT 활용)"""
         coating_fields = {
             '포스터': 'poster_coating'
         }
         
         field = coating_fields.get(self.category)
-        if field and field in self.category_info:
-            content = self.category_info[field]
-            coating_patterns = ['유광', '무광', '스팟 UV', '에폭시']
-            for pattern in coating_patterns:
-                if pattern in content:
-                    coating.append(pattern)
+        if not field or field not in self.category_info:
+            return []
         
-        return list(set(coating))
+        content = self.category_info[field]
+        if not content:
+            return []
+        
+        # GPT를 활용해서 코팅 옵션 추출
+        return self._extract_options_with_gpt(content, "코팅")
     
     def _extract_types_from_db(self) -> List[str]:
-        """DB에서 종류 정보 추출"""
-        types = []
+        """DB에서 종류 정보 추출 (GPT 활용)"""
         type_fields = {
             '스티커': 'sticker_types'
         }
         
         field = type_fields.get(self.category)
-        if field and field in self.category_info:
-            content = self.category_info[field]
-            type_patterns = ['싱글', '시트', '롤', '데칼', '띠부']
-            for pattern in type_patterns:
-                if pattern in content:
-                    types.append(pattern)
+        if not field or field not in self.category_info:
+            return []
         
-        return list(set(types))
+        content = self.category_info[field]
+        if not content:
+            return []
+        
+        # GPT를 활용해서 종류 옵션 추출
+        return self._extract_options_with_gpt(content, "종류")
     
     def _extract_stands_from_db(self) -> List[str]:
-        """DB에서 거치대 정보 추출"""
-        stands = []
+        """DB에서 거치대 정보 추출 (GPT 활용)"""
         stand_fields = {
             '배너': 'banner_stands'
         }
         
         field = stand_fields.get(self.category)
-        if field and field in self.category_info:
-            content = self.category_info[field]
-            stand_patterns = ['미니배너 거치대', '실내 거치대', '실외 거치대']
-            for pattern in stand_patterns:
-                if pattern in content:
-                    stands.append(pattern)
+        if not field or field not in self.category_info:
+            return []
         
-        return list(set(stands))
+        content = self.category_info[field]
+        if not content:
+            return []
+        
+        # GPT를 활용해서 거치대 옵션 추출
+        return self._extract_options_with_gpt(content, "거치대")
     
     def _extract_processing_from_db(self) -> List[str]:
-        """DB에서 가공 정보 추출"""
-        processing = []
+        """DB에서 가공 정보 추출 (GPT 활용)"""
         processing_fields = {
             '현수막': 'banner_large_processing'
         }
         
         field = processing_fields.get(self.category)
-        if field and field in self.category_info:
-            content = self.category_info[field]
-            processing_patterns = ['사방 아일렛', '열재단', '각목막대']
-            for pattern in processing_patterns:
-                if pattern in content:
-                    processing.append(pattern)
+        if not field or field not in self.category_info:
+            return []
         
-        return list(set(processing))
+        content = self.category_info[field]
+        if not content:
+            return []
+        
+        # GPT를 활용해서 가공 옵션 추출
+        return self._extract_options_with_gpt(content, "가공")
     
     def _extract_folding_from_db(self) -> List[str]:
-        """DB에서 접지 정보 추출"""
-        folding = []
+        """DB에서 접지 정보 추출 (GPT 활용)"""
         folding_fields = {
             '브로슈어': 'brochure_folding'
         }
         
         field = folding_fields.get(self.category)
-        if field and field in self.category_info:
-            content = self.category_info[field]
-            folding_patterns = ['2단', '3단']
-            for pattern in folding_patterns:
-                if pattern in content:
-                    folding.append(pattern)
+        if not field or field not in self.category_info:
+            return []
         
-        return list(set(folding))
+        content = self.category_info[field]
+        if not content:
+            return []
+        
+        # GPT를 활용해서 접지 옵션 추출
+        return self._extract_options_with_gpt(content, "접지")
+    
+    def _extract_options_with_gpt(self, content: str, option_type: str) -> List[str]:
+        """GPT를 활용해서 DB 내용에서 옵션 추출"""
+        if not self.use_gpt or not content:
+            return []
+        
+        try:
+            # GPT에게 옵션 추출 요청
+            prompt = f"""
+다음 텍스트에서 {option_type} 관련 옵션들을 추출해주세요.
+
+텍스트: {content}
+
+요구사항:
+1. {option_type}와 관련된 모든 옵션을 찾아주세요
+2. 각 옵션은 쉼표로 구분해서 나열해주세요
+3. 가격 정보나 설명은 제외하고 옵션명만 추출해주세요
+4. 중복된 옵션은 제거해주세요
+
+예시 응답 형식:
+반누보, 휘라레, 아트지, 스노우지
+
+JSON 형태로 응답해주세요:
+{{"options": ["옵션1", "옵션2", "옵션3"]}}
+"""
+            
+            response = self.gpt_client.process_conversation(prompt)
+            
+            if 'error' in response:
+                return []
+            
+            # JSON 응답에서 옵션 추출
+            try:
+                if isinstance(response, dict) and 'options' in response:
+                    return response['options']
+                elif isinstance(response, str):
+                    # 문자열 응답에서 옵션 추출 시도
+                    import json
+                    parsed = json.loads(response)
+                    if 'options' in parsed:
+                        return parsed['options']
+            except:
+                pass
+            
+            # GPT 응답이 실패하면 간단한 키워드 매칭으로 폴백
+            return self._fallback_keyword_extraction(content, option_type)
+            
+        except Exception as e:
+            print(f"GPT 옵션 추출 실패: {e}")
+            return self._fallback_keyword_extraction(content, option_type)
+    
+    def _fallback_keyword_extraction(self, content: str, option_type: str) -> List[str]:
+        """GPT 실패 시 간단한 키워드 매칭으로 폴백"""
+        # 기본 키워드 패턴 (GPT 실패 시 사용)
+        keyword_patterns = {
+            "용지": ['반누보', '휘라레', '스타드림퀼츠', '아트지', '스노우지', '랑데부', '양상블', '무광', '유광', '백상지'],
+            "사이즈": ['A4', 'A5', 'A3', 'B4', 'B5', '90×54mm', '85×54mm', '600×1800mm', '150×300mm', '200×400mm'],
+            "후가공": ['형압', '박', '오시', '절취선', '도무송', '넘버링'],
+            "코팅": ['유광', '무광', '스팟 UV', '에폭시'],
+            "종류": ['싱글', '시트', '롤', '데칼', '띠부'],
+            "거치대": ['미니배너 거치대', '실내 거치대', '실외 거치대'],
+            "가공": ['사방 아일렛', '열재단', '각목막대'],
+            "접지": ['2단', '3단']
+        }
+        
+        patterns = keyword_patterns.get(option_type, [])
+        found_options = []
+        
+        for pattern in patterns:
+            if pattern in content:
+                found_options.append(pattern)
+        
+        return list(set(found_options))
     
     def process_user_message(self, message: str, current_slots: Dict) -> Dict:
         """사용자 메시지 처리 (GPT-4-mini 기반)"""
@@ -477,6 +546,27 @@ class PrintShopAIService:
 4. **맥락 이해**: 이전 대화를 고려하여 적절한 응답
 5. **상태 기억**: 이미 수집된 정보는 다시 묻지 말고 다음 단계로 진행
 6. **슬롯 업데이트**: 사용자 메시지에서 정보를 추출하여 적절한 슬롯에 저장
+
+=== 가독성 개선 지침 ===
+7. **정보 요약 시 가독성**: 수집된 정보를 요약할 때는 다음과 같이 작성하세요:
+   ```
+   **현재까지 수집된 정보:**
+   
+   • 수량: 400부
+   • 사이즈: 기본
+   • 용지: 모조지
+   • 인쇄 방식: 단면
+   • 후가공: 칼라
+   • 지역: 중구
+   
+   이제 **예산**(예: 50,000원, 100,000원 등)을 알려주시면, 
+   **최종 견적 리포트를 생성할 수 있습니다!**
+   ```
+
+8. **굵은 글씨 활용**: 중요한 정보는 **굵은 글씨**로 강조하세요
+   - **주문 정보**, **견적 현황**, **추천 인쇄소** 등 섹션 제목
+   - **가격**, **연락처**, **제작기간** 등 핵심 정보
+   - **다음 단계**, **주의사항** 등 중요한 안내
 
 === 중요: 견적 완료 시 처리 방식 ===
 7. **견적 리포트 생성**: 모든 정보 수집 완료 시 주문 진행이 아닌 견적 리포트 제공
@@ -564,7 +654,7 @@ JSON 형태로 응답해주세요:
     def _is_all_slots_filled(self, slots: Dict) -> bool:
         """모든 슬롯이 채워졌는지 확인"""
         category_flows = {
-            '명함': ['quantity', 'paper', 'printing', 'finishing'],
+            '명함': ['quantity', 'size', 'paper', 'printing', 'finishing'],
             '배너': ['size', 'quantity', 'stand'],
             '포스터': ['paper', 'size', 'quantity', 'coating'],
             '스티커': ['type', 'size', 'quantity'],
@@ -596,7 +686,7 @@ JSON 형태로 응답해주세요:
     
     def _format_confirmation_message(self, slots: Dict) -> str:
         """확인 메시지 포맷팅"""
-        message = f"📋 {self.category} 견적 정보 확인\n\n"
+        message = f"**{self.category} 견적 정보 확인**\n\n"
         
         slot_names = {
             'quantity': '수량',
@@ -814,12 +904,12 @@ JSON 형태로 응답해주세요:
         if 'error' in quote_result:
             return f"죄송합니다. {quote_result['error']}"
         
-        response = f"📋 {self.category} 최종 견적 리포트\n"
+        response = f"**{self.category} 최종 견적 리포트**\n"
         response += "=" * 50 + "\n\n"
         
         # 수집된 정보 요약
         slots = quote_result['slots']
-        response += "📝 주문 정보:\n"
+        response += "**주문 정보:**\n"
         slot_names = {
             'quantity': '수량',
             'paper': '용지',
@@ -837,30 +927,31 @@ JSON 형태로 응답해주세요:
             if value and key in slot_names:
                 response += f"• {slot_names[key]}: {value}\n"
         
-        response += f"\n📊 견적 현황:\n"
+        response += f"\n**견적 현황:**\n"
         response += f"• 총 {quote_result.get('total_available', 0)}개 인쇄소에서 견적 가능\n"
         response += f"• 가격대: {self._get_price_range(quote_result['quotes'])}\n\n"
         
-        response += "🏆 추천 인쇄소 TOP3:\n"
+        response += "**추천 인쇄소 TOP3:**\n"
         response += "-" * 30 + "\n"
         
         # TOP3 추천
         top3_recommendations = quote_result.get('top3_recommendations', [])
         for i, quote in enumerate(top3_recommendations, 1):
             response += f"{i}위. {quote['printshop_name']}\n"
-            response += f"   ⭐ 추천 점수: {quote.get('recommendation_score', 0):.1f}점\n"
-            response += f"   💡 추천 이유: {quote.get('recommendation_reason', '안정적인 서비스')}\n"
-            response += f"   📞 연락처: {quote['printshop_phone']}\n"
-            response += f"   💰 단가: {quote['base_price']:,}원\n"
-            response += f"   📦 총액: {quote['total_price']:,}원\n"
-            response += f"   ⏰ 제작기간: {quote['production_time']}\n"
-            response += f"   🚚 배송: {quote['delivery_options']}\n"
+            response += f"   **추천 점수:** {quote.get('recommendation_score', 0):.1f}점\n"
+            response += f"   **추천 이유:** {quote.get('recommendation_reason', '안정적인 서비스')}\n"
+            response += f"   **연락처:** {quote['printshop_phone']}\n"
+            response += f"   **단가:** {quote['base_price']:,}원\n"
+            response += f"   **총액:** {quote['total_price']:,}원\n"
+            response += f"   **제작기간:** {quote['production_time']}\n"
+            response += f"   **배송:** {quote['delivery_options']}\n"
             if quote.get('is_verified', False):
-                response += f"   ✅ 인증된 인쇄소\n"
+                response += f"   **인증된 인쇄소**\n"
             response += "\n"
         
-        response += "💡 다음 단계:\n"
+        response += "**다음 단계:**\n"
         response += "• 추천 인쇄소에 직접 연락하여 주문 진행\n"
+        response += "• **디자인 파일 준비:** AI, PSD, PDF, JPG 등 원본 파일과 함께 견적서를 가져가시면 됩니다\n"
         response += "• 추가 문의사항이 있으시면 언제든 말씀해주세요!\n"
         response += "• 다른 옵션으로 견적을 다시 받고 싶으시면 '다시 견적받기'라고 말씀해주세요."
         
