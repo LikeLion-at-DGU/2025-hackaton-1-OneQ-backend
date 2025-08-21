@@ -112,12 +112,12 @@ class PrintShopAIService:
         combined_info = {} # 카테고리별 정보를 저장할 딕셔너리
         
         category_fields = { # 각 카테고리마다 필요한 DB 필드들을 정의
-            '명함': ['business_card_sizes', 'business_card_papers', 'business_card_quantities', 'business_card_printing', 'business_card_finishing'],
-            '배너': ['banner_sizes', 'banner_stands', 'banner_quantities'],
-            '포스터': ['poster_papers', 'poster_coating', 'poster_quantities'],
-            '스티커': ['sticker_types', 'sticker_quantities', 'sticker_sizes'],
-            '현수막': ['banner_large_sizes', 'banner_large_quantities', 'banner_large_processing'],
-            '브로슈어': ['brochure_papers', 'brochure_folding', 'brochure_sizes', 'brochure_quantities']
+            '명함': ['business_card_paper_options', 'business_card_printing_options', 'business_card_finishing_options', 'business_card_min_quantity'],
+            '배너': ['banner_size_options', 'banner_stand_options', 'banner_min_quantity'],
+            '포스터': ['poster_paper_options', 'poster_coating_options', 'poster_min_quantity'],
+            '스티커': ['sticker_type_options', 'sticker_size_options', 'sticker_min_quantity'],
+            '현수막': ['banner_large_size_options', 'banner_large_processing_options', 'banner_large_min_quantity'],
+            '브로슈어': ['brochure_paper_options', 'brochure_size_options', 'brochure_folding_options', 'brochure_min_quantity']
         }
         # 각 필드별 정보 수집집
         if self.category in category_fields:
@@ -251,9 +251,9 @@ class PrintShopAIService:
     def _extract_papers_from_db(self) -> List[str]:
         """DB에서 용지 정보 추출 (GPT 활용)"""
         paper_fields = {
-            '명함': 'business_card_papers',
-            '포스터': 'poster_papers',
-            '브로슈어': 'brochure_papers'
+            '명함': 'business_card_paper_options',
+            '포스터': 'poster_paper_options',
+            '브로슈어': 'brochure_paper_options'
         }
         
         field = paper_fields.get(self.category)
@@ -270,11 +270,11 @@ class PrintShopAIService:
     def _extract_sizes_from_db(self) -> List[str]:
         """DB에서 사이즈 정보 추출 (GPT 활용)"""
         size_fields = {
-            '명함': 'business_card_sizes',
-            '배너': 'banner_sizes',
-            '스티커': 'sticker_sizes',
-            '현수막': 'banner_large_sizes',
-            '브로슈어': 'brochure_sizes'
+            '명함': 'business_card_paper_options',  # 명함은 용지 옵션에서 사이즈 정보 추출
+            '배너': 'banner_size_options',
+            '스티커': 'sticker_size_options',
+            '현수막': 'banner_large_size_options',
+            '브로슈어': 'brochure_size_options'
         }
         
         field = size_fields.get(self.category)
@@ -291,7 +291,7 @@ class PrintShopAIService:
     def _extract_finishing_from_db(self) -> List[str]:
         """DB에서 후가공 정보 추출 (GPT 활용)"""
         finishing_fields = {
-            '명함': 'business_card_finishing'
+            '명함': 'business_card_finishing_options'
         }
         
         field = finishing_fields.get(self.category)
@@ -308,7 +308,7 @@ class PrintShopAIService:
     def _extract_coating_from_db(self) -> List[str]:
         """DB에서 코팅 정보 추출 (GPT 활용)"""
         coating_fields = {
-            '포스터': 'poster_coating'
+            '포스터': 'poster_coating_options'
         }
         
         field = coating_fields.get(self.category)
@@ -325,7 +325,7 @@ class PrintShopAIService:
     def _extract_types_from_db(self) -> List[str]:
         """DB에서 종류 정보 추출 (GPT 활용)"""
         type_fields = {
-            '스티커': 'sticker_types'
+            '스티커': 'sticker_type_options'
         }
         
         field = type_fields.get(self.category)
@@ -342,7 +342,7 @@ class PrintShopAIService:
     def _extract_stands_from_db(self) -> List[str]:
         """DB에서 거치대 정보 추출 (GPT 활용)"""
         stand_fields = {
-            '배너': 'banner_stands'
+            '배너': 'banner_stand_options'
         }
         
         field = stand_fields.get(self.category)
@@ -359,7 +359,7 @@ class PrintShopAIService:
     def _extract_processing_from_db(self) -> List[str]:
         """DB에서 가공 정보 추출 (GPT 활용)"""
         processing_fields = {
-            '현수막': 'banner_large_processing'
+            '현수막': 'banner_large_processing_options'
         }
         
         field = processing_fields.get(self.category)
@@ -376,7 +376,7 @@ class PrintShopAIService:
     def _extract_folding_from_db(self) -> List[str]:
         """DB에서 접지 정보 추출 (GPT 활용)"""
         folding_fields = {
-            '브로슈어': 'brochure_folding'
+            '브로슈어': 'brochure_folding_options'
         }
         
         field = folding_fields.get(self.category)
@@ -512,7 +512,7 @@ JSON 형태로 응답해주세요:
             '현수막': ['size', 'quantity', 'processing'],
             '브로슈어': ['paper', 'folding', 'size', 'quantity']
         }
-        common_tail = ['due_days', 'region', 'budget']
+        common_tail = ['due_days', 'region', 'budget']  
         required = required_slots.get(self.category, []) + common_tail
         missing_slots = self.conversation_manager.get_missing_slots(required)
         
