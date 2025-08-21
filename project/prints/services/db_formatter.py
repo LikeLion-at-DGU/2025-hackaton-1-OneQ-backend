@@ -51,36 +51,36 @@ class DBFormatter:
         """카테고리별 필드 매핑"""
         return {
             '명함': {
-                'papers': 'business_card_papers',
-                'quantities': 'business_card_quantities',
-                'printing': 'business_card_printing',
-                'finishing': 'business_card_finishing'
+                'papers': 'business_card_paper_options',
+                'printing': 'business_card_printing_options',
+                'finishing': 'business_card_finishing_options',
+                'min_quantity': 'business_card_min_quantity'
             },
             '배너': {
-                'sizes': 'banner_sizes',
-                'stands': 'banner_stands',
-                'quantities': 'banner_quantities'
+                'sizes': 'banner_size_options',
+                'stands': 'banner_stand_options',
+                'min_quantity': 'banner_min_quantity'
             },
             '포스터': {
-                'papers': 'poster_papers',
-                'coating': 'poster_coating',
-                'quantities': 'poster_quantities'
+                'papers': 'poster_paper_options',
+                'coating': 'poster_coating_options',
+                'min_quantity': 'poster_min_quantity'
             },
             '스티커': {
-                'types': 'sticker_types',
-                'quantities': 'sticker_quantities',
-                'sizes': 'sticker_sizes'
+                'types': 'sticker_type_options',
+                'sizes': 'sticker_size_options',
+                'min_quantity': 'sticker_min_quantity'
             },
             '현수막': {
-                'sizes': 'banner_large_sizes',
-                'quantities': 'banner_large_quantities',
-                'processing': 'banner_large_processing'
+                'sizes': 'banner_large_size_options',
+                'processing': 'banner_large_processing_options',
+                'min_quantity': 'banner_large_min_quantity'
             },
             '브로슈어': {
-                'papers': 'brochure_papers',
-                'folding': 'brochure_folding',
-                'sizes': 'brochure_sizes',
-                'quantities': 'brochure_quantities'
+                'papers': 'brochure_paper_options',
+                'folding': 'brochure_folding_options',
+                'sizes': 'brochure_size_options',
+                'min_quantity': 'brochure_min_quantity'
             }
         }
     

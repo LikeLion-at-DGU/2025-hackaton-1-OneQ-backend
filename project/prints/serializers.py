@@ -14,21 +14,21 @@ class PrintShopDetailSerializer(serializers.ModelSerializer):
     class Meta:
         model = PrintShop
         fields = ['id', 'name', 'phone', 'email', 'business_hours', 'address',
-                 'equipment_list', 'available_categories', 'description',
+                 'available_categories', 'description',
                  'production_time', 'delivery_options', 'bulk_discount',
                  # 명함 정보
-                 'business_card_papers', 'business_card_quantities', 
-                 'business_card_printing', 'business_card_finishing',
+                 'business_card_paper_options', 'business_card_printing_options', 
+                 'business_card_finishing_options', 'business_card_min_quantity',
                  # 배너 정보
-                 'banner_sizes', 'banner_stands', 'banner_quantities',
+                 'banner_size_options', 'banner_stand_options', 'banner_min_quantity',
                  # 포스터 정보
-                 'poster_papers', 'poster_coating', 'poster_quantities',
+                 'poster_paper_options', 'poster_coating_options', 'poster_min_quantity',
                  # 스티커 정보
-                 'sticker_types', 'sticker_quantities', 'sticker_sizes',
+                 'sticker_type_options', 'sticker_size_options', 'sticker_min_quantity',
                  # 현수막 정보
-                 'banner_large_sizes', 'banner_large_quantities', 'banner_large_processing',
+                 'banner_large_size_options', 'banner_large_processing_options', 'banner_large_min_quantity',
                  # 브로슈어 정보
-                 'brochure_papers', 'brochure_folding', 'brochure_sizes', 'brochure_quantities',
+                 'brochure_paper_options', 'brochure_size_options', 'brochure_folding_options', 'brochure_min_quantity',
                  'is_verified', 'is_active', 'created_at', 'updated_at']
 
 # ===== 단계별 Serializer =====
@@ -52,22 +52,22 @@ class PrintShopStep2Serializer(serializers.ModelSerializer):
         model = PrintShop
         fields = [
             # 기본 서비스 정보
-            'equipment_list', 'available_categories', 'description',
+            'available_categories', 'description',
             # 공통 정보
             'production_time', 'delivery_options', 'bulk_discount',
             # 명함 정보
-            'business_card_papers', 'business_card_quantities', 
-            'business_card_printing', 'business_card_finishing',
+            'business_card_paper_options', 'business_card_printing_options', 
+            'business_card_finishing_options', 'business_card_min_quantity',
             # 배너 정보
-            'banner_sizes', 'banner_stands', 'banner_quantities',
+            'banner_size_options', 'banner_stand_options', 'banner_min_quantity',
             # 포스터 정보
-            'poster_papers', 'poster_coating', 'poster_quantities',
+            'poster_paper_options', 'poster_coating_options', 'poster_min_quantity',
             # 스티커 정보
-            'sticker_types', 'sticker_quantities', 'sticker_sizes',
+            'sticker_type_options', 'sticker_size_options', 'sticker_min_quantity',
             # 현수막 정보
-            'banner_large_sizes', 'banner_large_quantities', 'banner_large_processing',
+            'banner_large_size_options', 'banner_large_processing_options', 'banner_large_min_quantity',
             # 브로슈어 정보
-            'brochure_papers', 'brochure_folding', 'brochure_sizes', 'brochure_quantities'
+            'brochure_paper_options', 'brochure_size_options', 'brochure_folding_options', 'brochure_min_quantity'
         ]
     
     def update(self, instance, validated_data):
@@ -89,11 +89,12 @@ class PrintShopStep2Serializer(serializers.ModelSerializer):
 class PrintShopFinalizeSerializer(serializers.ModelSerializer):
     """3단계: 최종 등록 Serializer"""
     password = serializers.CharField(write_only=True, min_length=4, max_length=20)
+    password_confirm = serializers.CharField(write_only=True, min_length=4, max_length=20)
     business_license = serializers.FileField(required=True, allow_null=False, allow_empty_file=False)
     
     class Meta:
         model = PrintShop
-        fields = ['password', 'business_license']
+        fields = ['password', 'password_confirm', 'business_license']
     
     def validate_password(self, value):
         """비밀번호 유효성 검사: 4-20자, 특수문자 1개 이상 필수"""
@@ -108,7 +109,22 @@ class PrintShopFinalizeSerializer(serializers.ModelSerializer):
         
         return value
     
+    def validate(self, data):
+        """비밀번호와 비밀번호 확인이 일치하는지 검사"""
+        password = data.get('password')
+        password_confirm = data.get('password_confirm')
+        
+        if password and password_confirm and password != password_confirm:
+            raise serializers.ValidationError({
+                'password_confirm': '비밀번호가 일치하지 않습니다.'
+            })
+        
+        return data
+    
     def update(self, instance, validated_data):
+        # 비밀번호 확인 필드 제거
+        validated_data.pop('password_confirm', None)
+        
         # 비밀번호 해싱
         validated_data['password'] = make_password(validated_data['password'])
         
@@ -132,6 +148,7 @@ class PrintShopFinalizeSerializer(serializers.ModelSerializer):
 class PrintShopCreateSerializer(serializers.ModelSerializer):
     """인쇄소 등록용 Serializer (한 번에 모든 정보)"""
     password = serializers.CharField(write_only=True, min_length=4, max_length=20)
+    password_confirm = serializers.CharField(write_only=True, min_length=4, max_length=20)
     business_license = serializers.FileField(required=True, allow_null=False, allow_empty_file=False)
     
     class Meta:
@@ -140,24 +157,24 @@ class PrintShopCreateSerializer(serializers.ModelSerializer):
             # 기본 정보
             'name', 'phone', 'email', 'business_hours', 'address',
             # 서비스 정보
-            'equipment_list', 'available_categories', 'description',
+            'available_categories', 'description',
             # 공통 정보
             'production_time', 'delivery_options', 'bulk_discount',
             # 명함 정보
-            'business_card_papers', 'business_card_quantities', 
-            'business_card_printing', 'business_card_finishing',
+            'business_card_paper_options', 'business_card_printing_options', 
+            'business_card_finishing_options', 'business_card_min_quantity',
             # 배너 정보
-            'banner_sizes', 'banner_stands', 'banner_quantities',
+            'banner_size_options', 'banner_stand_options', 'banner_min_quantity',
             # 포스터 정보
-            'poster_papers', 'poster_coating', 'poster_quantities',
+            'poster_paper_options', 'poster_coating_options', 'poster_min_quantity',
             # 스티커 정보
-            'sticker_types', 'sticker_quantities', 'sticker_sizes',
+            'sticker_type_options', 'sticker_size_options', 'sticker_min_quantity',
             # 현수막 정보
-            'banner_large_sizes', 'banner_large_quantities', 'banner_large_processing',
+            'banner_large_size_options', 'banner_large_processing_options', 'banner_large_min_quantity',
             # 브로슈어 정보
-            'brochure_papers', 'brochure_folding', 'brochure_sizes', 'brochure_quantities',
+            'brochure_paper_options', 'brochure_size_options', 'brochure_folding_options', 'brochure_min_quantity',
             # 행정 자료
-            'business_license', 'password'
+            'business_license', 'password', 'password_confirm'
         ]
     
     def validate_password(self, value):
@@ -173,7 +190,22 @@ class PrintShopCreateSerializer(serializers.ModelSerializer):
         
         return value
     
+    def validate(self, data):
+        """비밀번호와 비밀번호 확인이 일치하는지 검사"""
+        password = data.get('password')
+        password_confirm = data.get('password_confirm')
+        
+        if password and password_confirm and password != password_confirm:
+            raise serializers.ValidationError({
+                'password_confirm': '비밀번호가 일치하지 않습니다.'
+            })
+        
+        return data
+    
     def create(self, validated_data):
+        # 비밀번호 확인 필드 제거
+        validated_data.pop('password_confirm', None)
+        
         # 비밀번호 해싱
         validated_data['password'] = make_password(validated_data['password'])
         validated_data['registration_status'] = 'completed'
@@ -191,22 +223,22 @@ class PrintShopUpdateSerializer(serializers.ModelSerializer):
             # 기본 정보
             'name', 'phone', 'email', 'business_hours', 'address',
             # 서비스 정보
-            'equipment_list', 'available_categories', 'description',
+            'available_categories', 'description',
             # 공통 정보
             'production_time', 'delivery_options', 'bulk_discount',
             # 명함 정보
-            'business_card_papers', 'business_card_quantities', 
-            'business_card_printing', 'business_card_finishing',
+            'business_card_paper_options', 'business_card_printing_options', 
+            'business_card_finishing_options', 'business_card_min_quantity',
             # 배너 정보
-            'banner_sizes', 'banner_stands', 'banner_quantities',
+            'banner_size_options', 'banner_stand_options', 'banner_min_quantity',
             # 포스터 정보
-            'poster_papers', 'poster_coating', 'poster_quantities',
+            'poster_paper_options', 'poster_coating_options', 'poster_min_quantity',
             # 스티커 정보
-            'sticker_types', 'sticker_quantities', 'sticker_sizes',
+            'sticker_type_options', 'sticker_size_options', 'sticker_min_quantity',
             # 현수막 정보
-            'banner_large_sizes', 'banner_large_quantities', 'banner_large_processing',
+            'banner_large_size_options', 'banner_large_processing_options', 'banner_large_min_quantity',
             # 브로슈어 정보
-            'brochure_papers', 'brochure_folding', 'brochure_sizes', 'brochure_quantities',
+            'brochure_paper_options', 'brochure_size_options', 'brochure_folding_options', 'brochure_min_quantity',
             # 비밀번호
             'new_password', 'current_password'
         ]
