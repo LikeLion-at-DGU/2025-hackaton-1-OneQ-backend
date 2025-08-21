@@ -18,17 +18,17 @@ class PrintShopDetailSerializer(serializers.ModelSerializer):
                  'production_time', 'delivery_options', 'bulk_discount',
                  # 명함 정보
                  'business_card_paper_options', 'business_card_printing_options', 
-                 'business_card_finishing_options', 'business_card_min_quantity',
+                 'business_card_finishing_options', 'business_card_quantity_price_info',
                  # 배너 정보
-                 'banner_size_options', 'banner_stand_options', 'banner_min_quantity',
+                 'banner_size_options', 'banner_stand_options', 'banner_quantity_price_info',
                  # 포스터 정보
-                 'poster_paper_options', 'poster_coating_options', 'poster_min_quantity',
+                 'poster_paper_options', 'poster_coating_options', 'poster_quantity_price_info',
                  # 스티커 정보
-                 'sticker_type_options', 'sticker_size_options', 'sticker_min_quantity',
+                 'sticker_type_options', 'sticker_size_options', 'sticker_quantity_price_info',
                  # 현수막 정보
-                 'banner_large_size_options', 'banner_large_processing_options', 'banner_large_min_quantity',
+                 'banner_large_size_options', 'banner_large_processing_options', 'banner_large_quantity_price_info',
                  # 브로슈어 정보
-                 'brochure_paper_options', 'brochure_size_options', 'brochure_folding_options', 'brochure_min_quantity',
+                 'brochure_paper_options', 'brochure_size_options', 'brochure_folding_options', 'brochure_quantity_price_info',
                  'is_verified', 'is_active', 'created_at', 'updated_at']
 
 # ===== 단계별 Serializer =====
@@ -57,17 +57,17 @@ class PrintShopStep2Serializer(serializers.ModelSerializer):
             'production_time', 'delivery_options', 'bulk_discount',
             # 명함 정보
             'business_card_paper_options', 'business_card_printing_options', 
-            'business_card_finishing_options', 'business_card_min_quantity',
+            'business_card_finishing_options', 'business_card_quantity_price_info',
             # 배너 정보
-            'banner_size_options', 'banner_stand_options', 'banner_min_quantity',
+            'banner_size_options', 'banner_stand_options', 'banner_quantity_price_info',
             # 포스터 정보
-            'poster_paper_options', 'poster_coating_options', 'poster_min_quantity',
+            'poster_paper_options', 'poster_coating_options', 'poster_quantity_price_info',
             # 스티커 정보
-            'sticker_type_options', 'sticker_size_options', 'sticker_min_quantity',
+            'sticker_type_options', 'sticker_size_options', 'sticker_quantity_price_info',
             # 현수막 정보
-            'banner_large_size_options', 'banner_large_processing_options', 'banner_large_min_quantity',
+            'banner_large_size_options', 'banner_large_processing_options', 'banner_large_quantity_price_info',
             # 브로슈어 정보
-            'brochure_paper_options', 'brochure_size_options', 'brochure_folding_options', 'brochure_min_quantity'
+            'brochure_paper_options', 'brochure_size_options', 'brochure_folding_options', 'brochure_quantity_price_info'
         ]
     
     def update(self, instance, validated_data):
@@ -162,17 +162,17 @@ class PrintShopCreateSerializer(serializers.ModelSerializer):
             'production_time', 'delivery_options', 'bulk_discount',
             # 명함 정보
             'business_card_paper_options', 'business_card_printing_options', 
-            'business_card_finishing_options', 'business_card_min_quantity',
+            'business_card_finishing_options', 'business_card_quantity_price_info',
             # 배너 정보
-            'banner_size_options', 'banner_stand_options', 'banner_min_quantity',
+            'banner_size_options', 'banner_stand_options', 'banner_quantity_price_info',
             # 포스터 정보
-            'poster_paper_options', 'poster_coating_options', 'poster_min_quantity',
+            'poster_paper_options', 'poster_coating_options', 'poster_quantity_price_info',
             # 스티커 정보
-            'sticker_type_options', 'sticker_size_options', 'sticker_min_quantity',
+            'sticker_type_options', 'sticker_size_options', 'sticker_quantity_price_info',
             # 현수막 정보
-            'banner_large_size_options', 'banner_large_processing_options', 'banner_large_min_quantity',
+            'banner_large_size_options', 'banner_large_processing_options', 'banner_large_quantity_price_info',
             # 브로슈어 정보
-            'brochure_paper_options', 'brochure_size_options', 'brochure_folding_options', 'brochure_min_quantity',
+            'brochure_paper_options', 'brochure_size_options', 'brochure_folding_options', 'brochure_quantity_price_info',
             # 행정 자료
             'business_license', 'password', 'password_confirm'
         ]
@@ -228,17 +228,17 @@ class PrintShopUpdateSerializer(serializers.ModelSerializer):
             'production_time', 'delivery_options', 'bulk_discount',
             # 명함 정보
             'business_card_paper_options', 'business_card_printing_options', 
-            'business_card_finishing_options', 'business_card_min_quantity',
+            'business_card_finishing_options', 'business_card_quantity_price_info',
             # 배너 정보
-            'banner_size_options', 'banner_stand_options', 'banner_min_quantity',
+            'banner_size_options', 'banner_stand_options', 'banner_quantity_price_info',
             # 포스터 정보
-            'poster_paper_options', 'poster_coating_options', 'poster_min_quantity',
+            'poster_paper_options', 'poster_coating_options', 'poster_quantity_price_info',
             # 스티커 정보
-            'sticker_type_options', 'sticker_size_options', 'sticker_min_quantity',
+            'sticker_type_options', 'sticker_size_options', 'sticker_quantity_price_info',
             # 현수막 정보
-            'banner_large_size_options', 'banner_large_processing_options', 'banner_large_min_quantity',
+            'banner_large_size_options', 'banner_large_processing_options', 'banner_large_quantity_price_info',
             # 브로슈어 정보
-            'brochure_paper_options', 'brochure_size_options', 'brochure_folding_options', 'brochure_min_quantity',
+            'brochure_paper_options', 'brochure_size_options', 'brochure_folding_options', 'brochure_quantity_price_info',
             # 비밀번호
             'new_password', 'current_password'
         ]

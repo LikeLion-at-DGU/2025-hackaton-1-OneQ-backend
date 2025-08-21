@@ -53,33 +53,33 @@ class PrintShop(models.Model):
     business_card_paper_options = models.TextField(blank=True, verbose_name="명함 용지 종류 (옵션명+가격+설명)")
     business_card_printing_options = models.TextField(blank=True, verbose_name="명함 인쇄 방식 (옵션명+가격+설명)")
     business_card_finishing_options = models.TextField(blank=True, verbose_name="명함 후가공 옵션 (옵션명+가격+설명)")
-    business_card_min_quantity = models.CharField(max_length=50, blank=True, verbose_name="명함 최소 주문 수량")
+    business_card_quantity_price_info = models.TextField(blank=True, verbose_name="명함 수량 및 가격정보 (수량별 가격+최소주문수량)")
     
     # === 배너 구조화 정보 (폼 구조에 맞게 수정) ===
     banner_size_options = models.TextField(blank=True, verbose_name="배너 사이즈 종류 (사이즈명+가격+크기)")
     banner_stand_options = models.TextField(blank=True, verbose_name="배너 거치대 종류 (거치대명+가격+설명)")
-    banner_min_quantity = models.CharField(max_length=50, blank=True, verbose_name="배너 최소 주문 수량")
+    banner_quantity_price_info = models.TextField(blank=True, verbose_name="배너 수량 및 가격정보 (수량별 가격+최소주문수량)")
     
     # === 포스터 구조화 정보 (폼 구조에 맞게 수정) ===
     poster_paper_options = models.TextField(blank=True, verbose_name="포스터 용지 종류 (옵션명+가격+설명)")
     poster_coating_options = models.TextField(blank=True, verbose_name="포스터 코팅 종류 (옵션명+가격+설명)")
-    poster_min_quantity = models.CharField(max_length=50, blank=True, verbose_name="포스터 최소 주문 수량")
+    poster_quantity_price_info = models.TextField(blank=True, verbose_name="포스터 수량 및 가격정보 (수량별 가격+최소주문수량)")
     
     # === 스티커 구조화 정보 (폼 구조에 맞게 수정) ===
     sticker_type_options = models.TextField(blank=True, verbose_name="스티커 종류 (옵션명+가격+설명)")
     sticker_size_options = models.TextField(blank=True, verbose_name="스티커 사이즈 종류 (사이즈명+가격+크기)")
-    sticker_min_quantity = models.CharField(max_length=50, blank=True, verbose_name="스티커 최소 주문 수량")
+    sticker_quantity_price_info = models.TextField(blank=True, verbose_name="스티커 수량 및 가격정보 (수량별 가격+최소주문수량)")
     
     # === 현수막 구조화 정보 (폼 구조에 맞게 수정) ===
     banner_large_size_options = models.TextField(blank=True, verbose_name="현수막 사이즈 종류 (사이즈명+가격+크기)")
     banner_large_processing_options = models.TextField(blank=True, verbose_name="현수막 추가가공 종류 (옵션명+가격+설명)")
-    banner_large_min_quantity = models.CharField(max_length=50, blank=True, verbose_name="현수막 최소 주문 수량")
+    banner_large_quantity_price_info = models.TextField(blank=True, verbose_name="현수막 수량 및 가격정보 (수량별 가격+최소주문수량)")
     
     # === 브로슈어 구조화 정보 (폼 구조에 맞게 수정) ===
     brochure_paper_options = models.TextField(blank=True, verbose_name="브로슈어 용지 종류 (옵션명+가격+설명)")
     brochure_size_options = models.TextField(blank=True, verbose_name="브로슈어 사이즈 종류 (사이즈명+가격+크기)")
     brochure_folding_options = models.TextField(blank=True, verbose_name="브로슈어 접지 종류 (옵션명+가격+설명)")
-    brochure_min_quantity = models.CharField(max_length=50, blank=True, verbose_name="브로슈어 최소 주문 수량")
+    brochure_quantity_price_info = models.TextField(blank=True, verbose_name="브로슈어 수량 및 가격정보 (수량별 가격+최소주문수량)")
     
     # === 행정 자료 ===
     business_license = models.FileField(upload_to='business_licenses/', blank=True, verbose_name="사업자등록증")
