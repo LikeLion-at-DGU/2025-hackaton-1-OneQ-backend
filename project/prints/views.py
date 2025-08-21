@@ -39,8 +39,8 @@ def printshop_update_step2(request, pk):
     """2단계: 상세 정보 입력"""
     printshop = get_object_or_404(PrintShop, pk=pk)
     
-    # 1단계가 완료되지 않았으면 오류
-    if printshop.registration_status != 'step1':
+    # 1단계 또는 2단계 상태에서 허용 (2단계 재업데이트 허용)
+    if printshop.registration_status not in ['step1', 'step2']:
         return Response({
             'error': '1단계를 먼저 완료해주세요.'
         }, status=status.HTTP_400_BAD_REQUEST)
