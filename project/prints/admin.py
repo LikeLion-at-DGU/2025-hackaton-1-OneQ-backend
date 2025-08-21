@@ -24,27 +24,27 @@ class PrintShopAdmin(admin.ModelAdmin):
             'fields': ('production_time', 'delivery_options', 'bulk_discount')
         }),
         ('명함 정보', {
-            'fields': ('business_card_paper_options', 'business_card_printing_options', 'business_card_finishing_options', 'business_card_min_quantity'),
+            'fields': ('business_card_paper_options', 'business_card_printing_options', 'business_card_finishing_options', 'business_card_quantity_price_info'),
             'classes': ('collapse',)
         }),
         ('배너 정보', {
-            'fields': ('banner_size_options', 'banner_stand_options', 'banner_min_quantity'),
+            'fields': ('banner_size_options', 'banner_stand_options', 'banner_quantity_price_info'),
             'classes': ('collapse',)
         }),
         ('포스터 정보', {
-            'fields': ('poster_paper_options', 'poster_coating_options', 'poster_min_quantity'),
+            'fields': ('poster_paper_options', 'poster_coating_options', 'poster_quantity_price_info'),
             'classes': ('collapse',)
         }),
         ('스티커 정보', {
-            'fields': ('sticker_type_options', 'sticker_size_options', 'sticker_min_quantity'),
+            'fields': ('sticker_type_options', 'sticker_size_options', 'sticker_quantity_price_info'),
             'classes': ('collapse',)
         }),
         ('현수막 정보', {
-            'fields': ('banner_large_size_options', 'banner_large_processing_options', 'banner_large_min_quantity'),
+            'fields': ('banner_large_size_options', 'banner_large_processing_options', 'banner_large_quantity_price_info'),
             'classes': ('collapse',)
         }),
         ('브로슈어 정보', {
-            'fields': ('brochure_paper_options', 'brochure_size_options', 'brochure_folding_options', 'brochure_min_quantity'),
+            'fields': ('brochure_paper_options', 'brochure_size_options', 'brochure_folding_options', 'brochure_quantity_price_info'),
             'classes': ('collapse',)
         }),
         ('등록 진행 상황', {
