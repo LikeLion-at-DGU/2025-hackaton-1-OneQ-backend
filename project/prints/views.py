@@ -18,6 +18,7 @@ from datetime import datetime
 import uuid
 from rest_framework.views import APIView
 from .services.oneqscore import score_and_rank
+import re
 
 # ===== 단계별 인쇄소 등록 Views =====
 
@@ -220,6 +221,11 @@ def chatsession_create(request):
     serializer = ChatSessionSerializer(chat_session)
     return Response(serializer.data, status=status.HTTP_201_CREATED)
 
+def _sanitize_plain(text: str) -> str:
+    text = text.replace("**", "").replace("__", "").replace("`", "")
+    text = re.sub(r"(?m)^\s*[#>\|]+\s*", "", text)
+    return text
+
 @api_view(['POST'])
 def chatsession_send_message(request, session_id):
     """채팅 메시지 전송"""
@@ -253,13 +259,17 @@ def chatsession_send_message(request, session_id):
     ai_response = ai_service.process_user_message(user_message, chat_session.slots)
     print(f"AI 응답: {ai_response}")
     
+    # 슬롯/히스토리 업데이트 전 최종 메시지 정제
+    clean_msg = _sanitize_plain(ai_response.get('message', ''))
+    ai_response['message'] = clean_msg
+
     # 슬롯 정보 업데이트
     chat_session.slots = ai_response.get('slots', chat_session.slots)
     
     # AI 응답을 히스토리에 추가
     chat_session.history.append({
         'role': 'assistant',
-        'content': ai_response['message'],
+        'content': clean_msg,
         'timestamp': datetime.now().isoformat()
     })
     
