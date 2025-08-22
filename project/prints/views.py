@@ -199,6 +199,10 @@ def chatsession_create(request):
     session_id = str(uuid.uuid4())
     category = request.data.get('category', '명함')  # 기본값: 명함
     
+    print(f"=== 채팅 세션 생성 디버깅 ===")
+    print(f"요청된 카테고리: {category}")
+    print(f"요청 데이터: {request.data}")
+    
     # 카테고리별 AI 서비스 초기화
     ai_service = PrintShopAIService(category)
     
@@ -219,6 +223,7 @@ def chatsession_create(request):
     
     chat_session.save()
     serializer = ChatSessionSerializer(chat_session)
+    print(f"생성된 세션 카테고리: {chat_session.slots.get('category')}")
     return Response(serializer.data, status=status.HTTP_201_CREATED)
 
 def _sanitize_plain(text: str) -> str:
@@ -243,6 +248,11 @@ def chatsession_send_message(request, session_id):
     
     # AI 서비스 초기화 (기존 대화 히스토리 전달)
     category = chat_session.slots.get('category', '명함')
+    print(f"=== 채팅 메시지 처리 디버깅 ===")
+    print(f"세션 카테고리: {category}")
+    print(f"세션 슬롯: {chat_session.slots}")
+    print(f"사용자 메시지: {user_message}")
+    
     ai_service = PrintShopAIService(category)
     
     # 기존 대화 히스토리를 AI 서비스에 로드
@@ -251,10 +261,6 @@ def chatsession_send_message(request, session_id):
     
     # 기존 슬롯 정보를 AI 서비스에 로드
     ai_service.conversation_manager.current_slots = chat_session.slots.copy()
-    
-    # AI 응답 생성
-    print(f"사용자 메시지: {user_message}")
-    print(f"현재 슬롯: {chat_session.slots}")
     
     ai_response = ai_service.process_user_message(user_message, chat_session.slots)
     print(f"AI 응답: {ai_response}")

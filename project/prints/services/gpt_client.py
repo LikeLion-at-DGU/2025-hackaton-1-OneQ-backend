@@ -23,7 +23,12 @@ class GPTClient:
     
     def process_conversation(self, prompt: str) -> Dict:
         """GPT API 호출하여 대화 처리"""
+        print(f"=== GPT API 호출 시작 ===")
+        print(f"모델: {self.model}")
+        print(f"온도: {self.temperature}")
+        
         if not openai:
+            print("OpenAI 모듈이 설치되지 않음")
             return {
                 "error": "OpenAI 모듈이 설치되지 않았습니다.",
                 "action": "error",
@@ -32,6 +37,7 @@ class GPTClient:
             }
         
         if not self.api_key:
+            print("OpenAI API 키가 설정되지 않음")
             return {
                 "error": "OpenAI API 키가 설정되지 않았습니다.",
                 "action": "error", 
@@ -40,6 +46,7 @@ class GPTClient:
             }
         
         try:
+            print("OpenAI API 호출 중...")
             # OpenAI API 1.0.0+ 버전용 코드
             client = openai.OpenAI(api_key=self.api_key)
             response = client.chat.completions.create(
@@ -66,16 +73,24 @@ class GPTClient:
             
             # JSON 응답 파싱
             response_content = response.choices[0].message.content
-            return json.loads(response_content)
+            print(f"GPT 원본 응답: {response_content}")
             
-        except json.JSONDecodeError as e:
-            # JSON 파싱 오류 시 기본 응답
-            return {
-                "action": "ask",
-                "message": "죄송합니다. 다시 한 번 말씀해주세요.",
-                "slots": {}
-            }
+            try:
+                parsed_response = json.loads(response_content)
+                print(f"JSON 파싱 성공: {parsed_response}")
+                return parsed_response
+            except json.JSONDecodeError as e:
+                print(f"JSON 파싱 오류: {e}")
+                print(f"파싱 실패한 응답: {response_content}")
+                # JSON 파싱 오류 시 기본 응답
+                return {
+                    "action": "ask",
+                    "message": "죄송합니다. 다시 한 번 말씀해주세요.",
+                    "slots": {}
+                }
+            
         except Exception as e:
+            print(f"GPT API 호출 중 오류: {e}")
             # 기타 오류 시 에러 응답
             return {
                 "error": str(e),
