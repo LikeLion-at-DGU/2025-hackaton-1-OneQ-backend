@@ -137,7 +137,7 @@ CORS_ALLOW_CREDENTIALS = True
 
 CORS_ALLOWED_ORIGINS = [
     "https://oneq1.netlify.app",
-    "https://oneqqq.netlify.app/",
+    "https://oneqqq.netlify.app",
     "http://localhost:5173",
     "http://localhost:5174",
 ]
@@ -154,7 +154,7 @@ CORS_ALLOW_HEADERS = [
 
 CSRF_TRUSTED_ORIGINS = [
     "https://oneq1.netlify.app",
-    "https://oneqqq.netlify.app/",
+    "https://oneqqq.netlify.app",
     "https://yumiykim.shop",
     "http://localhost:5173",
     "http://localhost:5174",
