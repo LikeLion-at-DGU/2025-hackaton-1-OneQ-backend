@@ -265,18 +265,57 @@ def _price_fit_scores(total_prices: Dict[int, int], budget: Optional[int]) -> Di
 
 # ---------- 메인: 점수 계산 + Top3 ----------
 def score_and_rank(slots: Dict, shops: List[PrintShop]) -> Dict:
+    print(f"=== score_and_rank 디버깅 시작 ===")
+    print(f"입력 슬롯: {slots}")
+    print(f"입력 shops 길이: {len(shops)}")
+    
     category = slots.get("category") or slots.get("item_type") or "명함"
+    print(f"카테고리: {category}")
+    
+    # 카테고리 매핑 (한글 → 영어)
+    category_mapping = {
+        '명함': 'card',
+        '배너': 'banner', 
+        '포스터': 'poster',
+        '스티커': 'sticker',
+        '현수막': 'banner2',
+        '브로슈어': 'brochure'
+    }
+    
+    # 한글 카테고리를 영어로 변환
+    english_category = category_mapping.get(category, category)
+    print(f"영어 카테고리: {english_category}")
+    
     # ChatSession에는 '명함/배너/포스터...' 한글 카테고리로 저장되는 구조
     due_days = _to_int(slots.get("due_days"), 3)
     budget = _to_int(slots.get("budget"), 0)
 
     # 후보: 해당 카테고리를 지원하는 활성/완료 인쇄소(views/AI서비스와 동일 기준)
     candidates = []
-    for s in shops:
+    print(f"\n=== 후보 인쇄소 필터링 ===")
+    for i, s in enumerate(shops):
+        print(f"\n인쇄소 {i+1}: {s.name}")
+        print(f"  - is_active: {s.is_active}")
+        print(f"  - registration_status: {s.registration_status}")
+        print(f"  - available_categories: {s.available_categories}")
+        
         try:
-            if s.is_active and s.registration_status == "completed" and category in (s.available_categories or []):
+            # available_categories가 None이거나 빈 리스트인 경우 처리
+            available_cats = s.available_categories or []
+            if not isinstance(available_cats, list):
+                available_cats = []
+                print(f"  - available_cats 변환: {available_cats}")
+            
+            print(f"  - 찾는 카테고리: {english_category}")
+            print(f"  - 포함 여부: {english_category in available_cats}")
+                
+            if s.is_active and s.registration_status == "completed" and english_category in available_cats:
                 candidates.append(s)
-        except Exception:
+                print(f"  ✓ 후보에 추가됨")
+            else:
+                print(f"  ✗ 후보에서 제외됨")
+        except Exception as e:
+            print(f"  ✗ 예외 발생: {e}")
             continue
     if not candidates:
         return {"items": [], "count": 0, "all": []}
