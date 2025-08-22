@@ -128,38 +128,28 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 STATIC_ROOT = os.path.join(BASE_DIR, 'static')
 
-CORS_ALLOW_ALL_ORIGINS = True 
+CORS_ALLOW_ALL_ORIGINS = False
 CORS_ALLOW_CREDENTIALS = True
 
-'''
 CORS_ALLOWED_ORIGINS = [
-    "https://oneqqq.netlify.app",
+    'https://oneq1.netlify.app',
     "http://localhost:5174",
-    "http://localhost:5173",
-    "http://localhost:5175",
 ]
-'''
+
 
 
 CORS_ALLOW_HEADERS = [
-    "accept",
-    "accept-language",
     "content-type",
     "authorization",
     "x-csrftoken",
 ]
 
-CORS_ALLOW_METHODS = [   
-    "GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS",
-]
 
 
 CSRF_TRUSTED_ORIGINS = [
-    "https://oneqqq.netlify.app",
+    "https://oneq1.netlify.app",
     "https://yumiykim.shop",
     "http://localhost:5174",
-    "http://localhost:5173",
-    "http://localhost:5175",  
 ]
 
 SESSION_COOKIE_SECURE = True
