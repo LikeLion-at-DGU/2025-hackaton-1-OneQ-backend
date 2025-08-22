@@ -16,6 +16,57 @@ def _to_int(v, default=0) -> int:
     s = re.sub(r"[^\d]", "", s)
     return int(s) if s else default
 
+def _to_money(v, default=0):
+    """
+    '15만원', '120,000원', '7만 5천원', '200000', '10만원이하', '5만원이상' 등을 정규화 → 원 단위 정수
+    범위 표현도 처리 (이하/이상/미만/초과)
+    """
+    if v is None:
+        return default
+    
+    s = str(v).strip().replace(",", "").replace(" ", "")
+    
+    # 범위 표현 처리
+    if "이하" in s or "미만" in s:
+        s = s.replace("이하", "").replace("미만", "")
+        is_max = True
+    elif "이상" in s or "초과" in s:
+        s = s.replace("이상", "").replace("초과", "")
+        is_max = False
+    else:
+        is_max = None
+    
+    # 완전 숫자만: 그대로
+    if s.isdigit():
+        amount = int(s)
+        return amount if is_max is None else amount
+    
+    # '만원' 단위
+    m = re.match(r"^(\d+)(만|만원)$", s)
+    if m:
+        amount = int(m.group(1)) * 10000
+        return amount if is_max is None else amount
+    
+    # '천원'
+    m = re.match(r"^(\d+)(천|천원)$", s)
+    if m:
+        amount = int(m.group(1)) * 1000
+        return amount if is_max is None else amount
+    
+    # '원' 접미사
+    m = re.match(r"^(\d+)원$", s)
+    if m:
+        amount = int(m.group(1))
+        return amount if is_max is None else amount
+    
+    # 섞여있을 때 숫자만 추출 (마지막 fallback)
+    digits = re.sub(r"[^\d]", "", s)
+    if digits:
+        amount = int(digits)
+        return amount if is_max is None else amount
+    
+    return default
+
 def _parse_size_mm(size: str) -> Tuple[Optional[int], Optional[int]]:
     """'90x50mm', '600×1800mm', 'A4' 등 처리 (A4/A3 등은 대략 mm로 맵핑)"""
     if not size: return (None, None)
@@ -184,16 +235,24 @@ def _estimate_eta_hours(shop: PrintShop, category: str, slots: Dict) -> float:
     return eta
 
 def _due_fit(now: datetime, eta_hours: float, due_days: int) -> float:
-    """요청 납기(due_days일) 내 가능성으로 0~100점."""
+    """요청 납기(due_days일) 내 가능성으로 0~100점. 범위 처리를 고려하여 완화된 점수."""
     finish_time = now + timedelta(hours=eta_hours)
     deadline = now + timedelta(days=int(max(due_days, 1)))
 
     gap_h = (deadline - finish_time).total_seconds() / 3600.0  # +면 여유
-    if gap_h >= 0:   return 100.0
-    if gap_h >= -24: return 70.0
-    if gap_h >= -48: return 40.0
-    if gap_h >= -72: return 10.0
-    return 0.0
+    
+    # 완전 여유 있으면 최고점
+    if gap_h >= 0:
+        return 100.0
+    
+    # 약간 초과해도 점수 부여 (완전히 제외하지 않음)
+    if gap_h >= -24:   return 80.0  # 1일 초과
+    if gap_h >= -48:   return 60.0  # 2일 초과  
+    if gap_h >= -72:   return 40.0  # 3일 초과
+    if gap_h >= -120:  return 20.0  # 5일 초과
+    
+    # 너무 많이 초과하면 최저점 (하지만 0점은 아님)
+    return 5.0
 
 # ---------- 작업 적합도 ----------
 def _contains(text: str, needle: str) -> bool:
@@ -209,36 +268,37 @@ def _work_fit(shop: PrintShop, category: str, slots: Dict) -> float:
 
     # 카테고리별 텍스트 소스(현재 모델의 문자열 필드 활용)
     if category == "명함":
-        paper_src = shop.business_card_papers
-        fin_src   = shop.business_card_finishing
-        size_src  = shop.business_card_quantities  # 사이즈 전용 필드가 없어서 대체/없으면 0점 처리
+        paper_src = shop.business_card_paper_options
+        fin_src   = shop.business_card_finishing_options
+        size_src  = shop.business_card_quantity_price_info  # 사이즈 전용 필드가 없어서 대체/없으면 0점 처리
     elif category == "포스터":
-        paper_src = shop.poster_papers
-        fin_src   = shop.poster_coating
-        size_src  = shop.poster_quantities
+        paper_src = shop.poster_paper_options
+        fin_src   = shop.poster_coating_options
+        size_src  = shop.poster_quantity_price_info
     elif category == "배너":
-        paper_src = shop.banner_sizes  # 배너는 소재보다 사이즈/거치대를 주로 확인
-        fin_src   = shop.banner_stands
-        size_src  = shop.banner_quantities
+        paper_src = shop.banner_size_options  # 배너는 소재보다 사이즈/거치대를 주로 확인
+        fin_src   = shop.banner_stand_options
+        size_src  = shop.banner_quantity_price_info
     elif category == "스티커":
-        paper_src = shop.sticker_types
-        fin_src   = shop.sticker_sizes
-        size_src  = shop.sticker_quantities
+        paper_src = shop.sticker_type_options
+        fin_src   = shop.sticker_size_options
+        size_src  = shop.sticker_quantity_price_info
     elif category == "현수막":
-        paper_src = shop.banner_large_sizes
-        fin_src   = shop.banner_large_processing
-        size_src  = shop.banner_large_quantities
+        paper_src = shop.banner_large_size_options
+        fin_src   = shop.banner_large_processing_options
+        size_src  = shop.banner_large_quantity_price_info
     elif category == "브로슈어":
-        paper_src = shop.brochure_papers
-        fin_src   = shop.brochure_folding
-        size_src  = shop.brochure_sizes
+        paper_src = shop.brochure_paper_options
+        fin_src   = shop.brochure_folding_options
+        size_src  = shop.brochure_size_options
     else:
         paper_src = fin_src = size_src = ""
 
     # 용지/후가공/사이즈 문자열 매칭(있으면 가점)
     if paper and _contains(paper_src, paper): s += 35
     if finishing != "NONE" and _contains(fin_src, finishing): s += 25
-    if size and _contains(size_src, size): s += 20
+    # 명함과 포스터는 사이즈 매칭 제외 (대부분의 인쇄소가 표준 규격 처리 가능)
+    if category not in ["명함", "포스터"] and size and _contains(size_src, size): s += 20
 
     # 처리량 여유
     cap = (shop.temp_step2_data or {}).get("capacity_info", {})
@@ -254,24 +314,33 @@ def _price_fit_scores(total_prices: Dict[int, int], budget: Optional[int]) -> Di
     mn, mx = min(vals), max(vals)
     rng = (mx - mn) or 1
     scores: Dict[int, float] = {}
+    
     for pid, price in total_prices.items():
-        base = 100.0 * (mx - price) / rng  # 싸면 높음
-        if budget and budget > 0 and price > budget:
-            over = (price - budget) / float(budget)
-            penalty = min(100.0, over * 200.0)  # 초과율 50%면 100점 감점
-            base = max(0.0, base - penalty)
+        # 기본 점수: 싸면 높음
+        base = 100.0 * (mx - price) / rng
+        
+        # 예산 범위 처리
+        if budget and budget > 0:
+            if price > budget:
+                # 예산 초과 시 페널티 (하지만 완전히 제외하지는 않음)
+                over = (price - budget) / float(budget)
+                penalty = min(50.0, over * 100.0)  # 초과율 50%면 50점 감점 (이전보다 완화)
+                base = max(0.0, base - penalty)
+            else:
+                # 예산 내면 보너스
+                bonus = min(20.0, (budget - price) / float(budget) * 50.0)
+                base = min(100.0, base + bonus)
+        
         scores[pid] = round(base, 1)
     return scores
 
 # ---------- 메인: 점수 계산 + Top3 ----------
 def score_and_rank(slots: Dict, shops: List[PrintShop]) -> Dict:
-    print(f"=== score_and_rank 디버깅 시작 ===")
-    print(f"입력 슬롯: {slots}")
-    print(f"입력 shops 길이: {len(shops)}")
-    
     category = slots.get("category") or slots.get("item_type") or "명함"
-    print(f"카테고리: {category}")
-    
+    # ChatSession에는 '명함/배너/포스터...' 한글 카테고리로 저장되는 구조
+    due_days = _to_int(slots.get("due_days"), 3)
+    budget = _to_int(slots.get("budget"), 0)
+
     # 카테고리 매핑 (한글 → 영어)
     category_mapping = {
         '명함': 'card',
@@ -284,39 +353,33 @@ def score_and_rank(slots: Dict, shops: List[PrintShop]) -> Dict:
     
     # 한글 카테고리를 영어로 변환
     english_category = category_mapping.get(category, category)
-    print(f"영어 카테고리: {english_category}")
-    
-    # ChatSession에는 '명함/배너/포스터...' 한글 카테고리로 저장되는 구조
-    due_days = _to_int(slots.get("due_days"), 3)
-    budget = _to_int(slots.get("budget"), 0)
 
     # 후보: 해당 카테고리를 지원하는 활성/완료 인쇄소(views/AI서비스와 동일 기준)
     candidates = []
-    print(f"\n=== 후보 인쇄소 필터링 ===")
-    for i, s in enumerate(shops):
-        print(f"\n인쇄소 {i+1}: {s.name}")
-        print(f"  - is_active: {s.is_active}")
-        print(f"  - registration_status: {s.registration_status}")
-        print(f"  - available_categories: {s.available_categories}")
-        
+    print(f"=== score_and_rank 디버깅 ===")
+    print(f"카테고리: {category} → {english_category}")
+    print(f"전달받은 인쇄소 수: {len(shops)}")
+    
+    for s in shops:
         try:
-            # available_categories가 None이거나 빈 리스트인 경우 처리
-            available_cats = s.available_categories or []
-            if not isinstance(available_cats, list):
-                available_cats = []
-                print(f"  - available_cats 변환: {available_cats}")
-            
+            print(f"인쇄소 확인: {s.name}")
+            print(f"  - is_active: {s.is_active}")
+            print(f"  - registration_status: {s.registration_status}")
+            print(f"  - available_categories: {s.available_categories}")
             print(f"  - 찾는 카테고리: {english_category}")
-            print(f"  - 포함 여부: {english_category in available_cats}")
-                
-            if s.is_active and s.registration_status == "completed" and english_category in available_cats:
+            print(f"  - 포함 여부: {english_category in (s.available_categories or [])}")
+            
+            if s.is_active and s.registration_status == "completed" and english_category in (s.available_categories or []):
                 candidates.append(s)
-                print(f"  ✓ 후보에 추가됨")
+                print(f"  ✓ {s.name} 후보 추가됨")
             else:
-                print(f"  ✗ 후보에서 제외됨")
+                print(f"  ✗ {s.name} 후보 제외됨")
         except Exception as e:
-            print(f"  ✗ 예외 발생: {e}")
+            print(f"  ✗ {s.name} 예외 발생: {e}")
             continue
+    
+    print(f"=== 최종 후보 인쇄소 수: {len(candidates)} ===")
+    
     if not candidates:
         return {"items": [], "count": 0, "all": []}
 
