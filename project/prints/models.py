@@ -92,12 +92,19 @@ class PrintShop(models.Model):
                                          choices=[
                                              ('step1', '1단계: 기본 정보'), # 1단계 완료
                                              ('step2', '2단계: 상세 정보'), # 2단계 완료
-                                             ('completed', '등록 완료') # 3단계 완료
+                                             ('pending', '심의 대기'), # 사업자등록증 심의 대기
+                                             ('completed', '등록 완료'), # 3단계 완료
+                                             ('rejected', '등록 거부') # 등록 거부
                                          ]) # 현재 등록 진행 상황 추적적
     
     # === 상태 관리 ===
     is_verified = models.BooleanField(default=False, verbose_name="인증 완료") # 사업자등록증 인증 완료 여부
     is_active = models.BooleanField(default=False, verbose_name="활성화") # 인쇄소 활성화 여부 True시 정상 운영 중인 인쇄소소
+    
+    # === 승인 관리 ===
+    admin_notes = models.TextField(blank=True, verbose_name="관리자 메모") # 승인/거부 시 메모
+    reviewed_at = models.DateTimeField(null=True, blank=True, verbose_name="심의일") # 심의 완료 날짜
+    reviewed_by = models.ForeignKey('auth.User', on_delete=models.SET_NULL, null=True, blank=True, verbose_name="심의자") # 심의한 관리자
     
     # === 시간 정보 ===
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="등록일")

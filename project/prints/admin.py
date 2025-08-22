@@ -2,16 +2,17 @@ from django.contrib import admin
 from django.utils.html import format_html
 from django.urls import reverse
 from django.http import HttpResponseRedirect
+from django.utils import timezone
 from .models import PrintShop, ChatSession
 
 @admin.register(PrintShop)
 class PrintShopAdmin(admin.ModelAdmin):
     """인쇄소 관리"""
-    list_display = ['name', 'phone', 'email', 'registration_status', 'verification_status', 'is_active', 'created_at']
+    list_display = ['name', 'phone', 'email', 'registration_status', 'verification_status', 'is_active', 'created_at', 'reviewed_at']
     list_filter = ['registration_status', 'is_verified', 'is_active', 'created_at']
     search_fields = ['name', 'phone', 'email', 'address']
-    readonly_fields = ['id', 'created_at', 'updated_at', 'business_license_preview']
-    actions = ['verify_printshops', 'unverify_printshops']
+    readonly_fields = ['id', 'created_at', 'updated_at', 'business_license_preview', 'reviewed_at', 'reviewed_by']
+    actions = ['approve_printshops', 'reject_printshops', 'verify_printshops', 'unverify_printshops']
     
     fieldsets = (
         ('기본 정보', {
@@ -54,6 +55,10 @@ class PrintShopAdmin(admin.ModelAdmin):
         ('인증 및 보안', {
             'fields': ('password', 'business_license', 'business_license_preview', 'is_verified', 'is_active')
         }),
+        ('승인 관리', {
+            'fields': ('admin_notes', 'reviewed_at', 'reviewed_by'),
+            'classes': ('collapse',)
+        }),
         ('시스템 정보', {
             'fields': ('id', 'created_at', 'updated_at'),
             'classes': ('collapse',)
@@ -89,6 +94,30 @@ class PrintShopAdmin(admin.ModelAdmin):
         updated = queryset.update(is_verified=False)
         self.message_user(request, f'{updated}개의 인쇄소가 미인증으로 변경되었습니다.')
     unverify_printshops.short_description = "선택된 인쇄소 미인증 처리"
+    
+    def approve_printshops(self, request, queryset):
+        """선택된 인쇄소들을 승인"""
+        updated = queryset.update(
+            registration_status='completed',
+            is_active=True,
+            is_verified=True,
+            reviewed_at=timezone.now(),
+            reviewed_by=request.user
+        )
+        self.message_user(request, f'{updated}개의 인쇄소가 승인되었습니다.')
+    approve_printshops.short_description = "선택된 인쇄소 승인"
+    
+    def reject_printshops(self, request, queryset):
+        """선택된 인쇄소들을 거부"""
+        updated = queryset.update(
+            registration_status='rejected',
+            is_active=False,
+            is_verified=False,
+            reviewed_at=timezone.now(),
+            reviewed_by=request.user
+        )
+        self.message_user(request, f'{updated}개의 인쇄소가 거부되었습니다.')
+    reject_printshops.short_description = "선택된 인쇄소 거부"
 
 @admin.register(ChatSession)
 class ChatSessionAdmin(admin.ModelAdmin):
