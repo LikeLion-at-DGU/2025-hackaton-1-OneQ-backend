@@ -1,7 +1,7 @@
 # prints/services/ai.py
 import json
 import re
-from typing import Dict, List, Optional
+from typing import Dict, List
 from ..models import PrintShop
 from .gpt_client import GPTClient
 from .db_formatter import DBFormatter
@@ -170,12 +170,12 @@ class PrintShopAIService:
         combined_info = {} # 카테고리별 정보를 저장할 딕셔너리
         
         category_fields = { # 각 카테고리마다 필요한 DB 필드들을 정의
-            '명함': ['business_card_paper_options', 'business_card_printing_options', 'business_card_finishing_options', 'business_card_min_quantity'],
-            '배너': ['banner_size_options', 'banner_stand_options', 'banner_min_quantity'],
-            '포스터': ['poster_paper_options', 'poster_coating_options', 'poster_min_quantity'],
-            '스티커': ['sticker_type_options', 'sticker_size_options', 'sticker_min_quantity'],
-            '현수막': ['banner_large_size_options', 'banner_large_processing_options', 'banner_large_min_quantity'],
-            '브로슈어': ['brochure_paper_options', 'brochure_size_options', 'brochure_folding_options', 'brochure_min_quantity']
+            '명함': ['business_card_paper_options', 'business_card_printing_options', 'business_card_finishing_options', 'business_card_quantity_price_info'],
+            '배너': ['banner_size_options', 'banner_stand_options', 'banner_quantity_price_info'],
+            '포스터': ['poster_paper_options', 'poster_coating_options', 'poster_quantity_price_info'],
+            '스티커': ['sticker_type_options', 'sticker_size_options', 'sticker_quantity_price_info'],
+            '현수막': ['banner_large_size_options', 'banner_large_processing_options', 'banner_large_quantity_price_info'],
+            '브로슈어': ['brochure_paper_options', 'brochure_size_options', 'brochure_folding_options', 'brochure_quantity_price_info']
         }
         # 각 필드별 정보 수집집
         if self.category in category_fields:
@@ -231,7 +231,7 @@ class PrintShopAIService:
     def _get_question_for_slot(self, slot: str) -> str:
         """슬롯별 질문 생성 (DB 정보 포함)"""
         questions = {
-            'quantity': '수량은 얼마나 하실 건가요?', # 수량은 자유 입력이므로 바로 질문(DB 조회 불필요요)
+            'quantity': '수량은 얼마나 하실 건가요?', # 수량은 자유 입력이므로 바로 질문(DB 조회 불필요)
             'paper': self._get_paper_question(),
             'size': self._get_size_question(),
             'printing': '인쇄 방식은 어떻게 하시겠어요? (단면, 양면)', # 인쇄 방식은 단면,양면 두 가지만 존재하므로 바로 질문
@@ -378,6 +378,10 @@ class PrintShopAIService:
             '브로슈어': 'brochure_paper_options'
         }
         
+        # 배너, 스티커, 현수막은 용지 정보가 없으므로 빈 리스트 반환
+        if self.category not in paper_fields:
+            return []
+        
         field = paper_fields.get(self.category)
         if not field or field not in self.category_info:
             return []
@@ -394,6 +398,7 @@ class PrintShopAIService:
         size_fields = {
             '명함': 'business_card_paper_options',  # 명함은 용지 옵션에서 사이즈 정보 추출
             '배너': 'banner_size_options',
+            '포스터': 'poster_paper_options',  # 포스터는 용지 옵션에서 사이즈 정보 추출
             '스티커': 'sticker_size_options',
             '현수막': 'banner_large_size_options',
             '브로슈어': 'brochure_size_options'
@@ -401,11 +406,28 @@ class PrintShopAIService:
         
         field = size_fields.get(self.category)
         if not field or field not in self.category_info:
+            # 포스터의 경우 기본 사이즈 옵션 제공
+            if self.category == '포스터':
+                return ['A4', 'A3', 'A2', 'A1', 'A0', 'B4', 'B3', 'B2', 'B1']
             return []
         
         content = self.category_info[field]
         if not content:
+            # 포스터의 경우 기본 사이즈 옵션 제공
+            if self.category == '포스터':
+                return ['A4', 'A3', 'A2', 'A1', 'A0', 'B4', 'B3', 'B2', 'B1']
             return []
+        
+        # 포스터의 경우 사이즈 정보가 용지 옵션에 포함되어 있을 수 있으므로
+        # 먼저 사이즈 전용 필드에서 찾고, 없으면 용지 옵션에서 추출
+        if self.category == '포스터':
+            # 포스터 사이즈 전용 필드가 없으므로 용지 옵션에서 사이즈 정보 추출
+            extracted_sizes = self._extract_options_with_gpt(content, "사이즈")
+            if extracted_sizes:
+                return extracted_sizes
+            else:
+                # 사이즈 정보가 없으면 기본 포스터 사이즈 제공
+                return ['A4', 'A3', 'A2', 'A1', 'A0', 'B4', 'B3', 'B2', 'B1']
         
         # GPT를 활용해서 사이즈 옵션 추출
         return self._extract_options_with_gpt(content, "사이즈")
@@ -678,6 +700,13 @@ DB 정보와 대화 맥락을 바탕으로 자연스럽게 대화하고, 추천 
 5. **상태 기억**: 이미 수집된 정보는 다시 묻지 말고 다음 단계로 진행
 6. **슬롯 업데이트**: 사용자 메시지에서 정보를 추출하여 적절한 슬롯에 저장
 7. **가격 정보 제외**: 질문할 때는 가격 정보를 말하지 말고 옵션명만 제공하세요
+8. **카테고리별 올바른 질문**: 반드시 현재 카테고리에 맞는 질문을 해야 합니다
+   - 포스터: 용지 → 사이즈(A4, A3, A2 등) → 수량 → 코팅
+   - 명함: 수량 → 사이즈(90x50mm 등) → 용지 → 인쇄방식 → 후가공
+   - 배너: 사이즈 → 수량 → 거치대
+   - 스티커: 종류 → 사이즈 → 수량
+   - 현수막: 사이즈 → 수량 → 가공
+   - 브로슈어: 용지 → 접지 → 사이즈 → 수량
 
 === 가독성 개선 지침 ===
 7. **정보 요약 시 가독성**: 수집된 정보를 요약할 때는 다음과 같이 작성하세요:
@@ -741,6 +770,11 @@ JSON 형태로 응답해주세요:
 1. 사용자의 의도를 정확히 파악하고, DB 정보를 바탕으로 유용한 응답을 제공하세요.
 2. 모든 정보 수집 완료 시 주문 진행이 아닌 견적 리포트를 제공하세요.
 3. "주문을 진행하겠습니다" 대신 "견적 리포트를 생성하겠습니다"라고 응답하세요.
+4. **카테고리별 올바른 질문**: 반드시 현재 카테고리에 맞는 질문을 해야 합니다.
+   - 포스터를 만들 때는 포스터 사이즈(A4, A3, A2 등)를 물어보세요.
+   - 명함을 만들 때는 명함 사이즈(90x50mm 등)를 물어보세요.
+   - 배너를 만들 때는 배너 사이즈(600x1800mm 등)를 물어보세요.
+   - 각 카테고리의 특성에 맞는 질문을 해야 합니다.
 """
         return prompt
     
@@ -809,65 +843,7 @@ JSON 형태로 응답해주세요:
     # GPT가 모든 자연어 처리를 담당하므로 하드코딩된 키워드 매칭 로직 제거
     # 대신 GPT 프롬프트에서 DB 정보를 제공하여 자유롭게 처리하도록 함
     
-    def _is_all_slots_filled(self, slots: Dict) -> bool:
-        """모든 슬롯이 채워졌는지 확인"""
-        category_flows = {
-            '명함': ['quantity', 'size', 'paper', 'printing', 'finishing'],
-            '배너': ['size', 'quantity', 'stand'],
-            '포스터': ['paper', 'size', 'quantity', 'coating'],
-            '스티커': ['type', 'size', 'quantity'],
-            '현수막': ['size', 'quantity', 'processing'],
-            '브로슈어': ['paper', 'folding', 'size', 'quantity']
-        }
-        
-        flow = category_flows.get(self.category, [])
-        return all(slot in slots and slots[slot] for slot in flow)
-    
-    def _get_next_question(self, slots: Dict) -> str:
-        """다음 질문 생성"""
-        category_flows = {
-            '명함': ['quantity', 'size', 'paper', 'printing', 'finishing'],
-            '배너': ['size', 'quantity', 'stand'],
-            '포스터': ['paper', 'size', 'quantity', 'coating'],
-            '스티커': ['type', 'size', 'quantity'],
-            '현수막': ['size', 'quantity', 'processing'],
-            '브로슈어': ['paper', 'folding', 'size', 'quantity']
-        }
-        common_tail = ['due_days', 'region', 'budget']
-        flow = category_flows.get(self.category, []) + common_tail
-        
-        for slot in flow:
-            if slot not in slots or not slots[slot]:
-                return self._get_question_for_slot(slot)
-        
-        return "모든 정보가 수집되었습니다!"
-    
-    def _format_confirmation_message(self, slots: Dict) -> str:
-        """확인 메시지 포맷팅"""
-        title = f"{self.category} 견적 정보 확인"
-        lines = [title, ""]
-        slot_names = {
-            'quantity': '수량',
-            'paper': '용지',
-            'size': '사이즈',
-            'printing': '인쇄 방식',
-            'finishing': '후가공',
-            'coating': '코팅',
-            'type': '종류',
-            'stand': '거치대',
-            'processing': '가공',
-            'folding': '접지',
-            'due_days': '납기(일)',
-            'region': '지역',
-            'budget': '예산(원)',
-        }
-        
-        for k, v in slots.items():
-            if v and k in slot_names:
-                lines.append(f"- {slot_names[k]}: {v}")
-        lines.append("")
-        lines.append("위 내용이 맞을까요?")
-        return "\n".join(lines)
+
     
     def calculate_quote(self, slots: Dict) -> Dict:
         """원큐스코어(가격40+납기30+작업30) 기반 TOP3 추천 + 전체 후보 리스팅"""
@@ -933,132 +909,7 @@ JSON 형태로 응답해주세요:
             print(f"견적 계산 오류: {e}")
             return {'error': f'견적 계산 중 오류가 발생했습니다: {str(e)}'}
     
-    def _calculate_single_quote(self, printshop: PrintShop, slots: Dict) -> Optional[Dict]:
-        """단일 인쇄소 견적 계산"""
-        try:
-            # 기본 가격 (임시)
-            base_price = 1000
-            
-            # 옵션별 가격 추가
-            if 'paper' in slots:
-                base_price += 500
-            
-            if 'finishing' in slots:
-                base_price += 1000
-            
-            if 'coating' in slots:
-                base_price += 800
-            
-            # 수량 할인
-            quantity = slots.get('quantity', 1)
-            # 수량을 숫자로 변환 (예: "200부" -> 200)
-            if isinstance(quantity, str):
-                quantity = int(''.join(filter(str.isdigit, quantity)))
-            else:
-                quantity = int(quantity)
-            
-            if quantity >= 100:
-                base_price = int(base_price * 0.9)  # 10% 할인
-            elif quantity >= 500:
-                base_price = int(base_price * 0.8)  # 20% 할인
-            
-            total_price = base_price * quantity
-            
-            return {
-                'printshop_name': printshop.name,
-                'printshop_phone': printshop.phone,
-                'base_price': base_price,
-                'quantity': quantity,
-                'total_price': total_price,
-                'production_time': printshop.production_time,
-                'delivery_options': printshop.delivery_options,
-                'is_verified': printshop.is_verified
-            }
-        except Exception as e:
-            return None
-    
-    def _get_top3_recommendations(self, quotes: List[Dict], slots: Dict) -> List[Dict]:
-        """추천 인쇄소 TOP3 선택 (가격, 품질, 서비스 등 종합 고려)"""
-        if not quotes:
-            return []
-        
-        # 각 인쇄소에 점수 부여
-        scored_quotes = []
-        for quote in quotes:
-            score = self._calculate_recommendation_score(quote, slots)
-            scored_quotes.append({
-                **quote,
-                'recommendation_score': score,
-                'recommendation_reason': self._get_recommendation_reason(quote, score)
-            })
-        
-        # 점수순으로 정렬하여 TOP3 선택
-        sorted_quotes = sorted(scored_quotes, key=lambda x: x['recommendation_score'], reverse=True)
-        return sorted_quotes[:3]
-    
-    def _calculate_recommendation_score(self, quote: Dict, slots: Dict) -> float:
-        """추천 점수 계산 (0-100점)"""
-        score = 0.0
-        
-        # 1. 가격 점수 (40점) - 낮을수록 높은 점수
-        total_price = quote.get('total_price', 0)
-        if total_price > 0:
-            # 가격이 낮을수록 높은 점수 (최대 40점)
-            price_score = max(0, 40 - (total_price / 1000))  # 1000원당 1점 차감
-            score += price_score
-        
-        # 2. 품질 점수 (30점) - 인증된 인쇄소 우대
-        if quote.get('is_verified', False):
-            score += 30
-        else:
-            score += 15
-        
-        # 3. 서비스 점수 (20점) - 배송 옵션, 제작 기간 등
-        delivery_options = quote.get('delivery_options', '')
-        if '당일' in delivery_options or '익일' in delivery_options:
-            score += 20
-        elif '택배' in delivery_options:
-            score += 15
-        else:
-            score += 10
-        
-        # 4. 수량 할인 점수 (10점) - 대량 주문 시 할인율 고려
-        quantity = slots.get('quantity', 0)
-        if isinstance(quantity, str):
-            quantity = int(''.join(filter(str.isdigit, quantity)))
-        
-        if quantity >= 500:
-            score += 10
-        elif quantity >= 200:
-            score += 7
-        elif quantity >= 100:
-            score += 5
-        
-        return min(100, score)
-    
-    def _get_recommendation_reason(self, quote: Dict, score: float) -> str:
-        """추천 이유 생성"""
-        reasons = []
-        
-        if quote.get('is_verified', False):
-            reasons.append("인증된 인쇄소")
-        
-        total_price = quote.get('total_price', 0)
-        if total_price < 50000:
-            reasons.append("합리적인 가격")
-        elif total_price < 100000:
-            reasons.append("경제적인 가격")
-        
-        delivery_options = quote.get('delivery_options', '')
-        if '당일' in delivery_options:
-            reasons.append("당일 배송 가능")
-        elif '익일' in delivery_options:
-            reasons.append("익일 배송 가능")
-        
-        if not reasons:
-            reasons.append("안정적인 서비스")
-        
-        return ", ".join(reasons)
+
     
     def _format_final_quote(self, quote_result: Dict) -> str:
         """최종 견적 리포트 포맷팅"""
