@@ -197,7 +197,13 @@ def printshop_search(request):
 def chatsession_create(request):
     """채팅 세션 생성"""
     session_id = str(uuid.uuid4())
-    category = request.data.get('category', '명함')  # 기본값: 명함
+    category = request.data.get('category')  # 카테고리는 필수값
+    
+    # 카테고리가 없으면 오류
+    if not category:
+        return Response({
+            'error': '카테고리를 선택해주세요.'
+        }, status=status.HTTP_400_BAD_REQUEST)
     
     print(f"=== 채팅 세션 생성 디버깅 ===")
     print(f"요청된 카테고리: {category}")
@@ -247,7 +253,13 @@ def chatsession_send_message(request, session_id):
     })
     
     # AI 서비스 초기화 (기존 대화 히스토리 전달)
-    category = chat_session.slots.get('category', '명함')
+    category = chat_session.slots.get('category')
+    
+    # 카테고리가 없으면 오류
+    if not category:
+        return Response({
+            'error': '세션에 카테고리 정보가 없습니다.'
+        }, status=status.HTTP_400_BAD_REQUEST)
     print(f"=== 채팅 메시지 처리 디버깅 ===")
     print(f"세션 카테고리: {category}")
     print(f"세션 슬롯: {chat_session.slots}")
@@ -269,8 +281,9 @@ def chatsession_send_message(request, session_id):
     clean_msg = _sanitize_plain(ai_response.get('message', ''))
     ai_response['message'] = clean_msg
 
-    # 슬롯 정보 업데이트
-    chat_session.slots = ai_response.get('slots', chat_session.slots)
+    # 슬롯 정보 업데이트 (AI 응답에서 업데이트된 슬롯 반영)
+    if 'slots' in ai_response:
+        chat_session.slots.update(ai_response['slots'])
     
     # AI 응답을 히스토리에 추가
     chat_session.history.append({
@@ -289,6 +302,8 @@ def chatsession_history(request, session_id):
     chat_session = get_object_or_404(ChatSession, session_id=session_id)
     serializer = ChatSessionSerializer(chat_session)
     return Response(serializer.data)
+
+
 
 
 # === 사업자등록증 인증관련 뷰 ===
