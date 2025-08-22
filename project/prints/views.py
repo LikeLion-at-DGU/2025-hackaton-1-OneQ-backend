@@ -72,8 +72,8 @@ def printshop_finalize(request, pk):
         serializer.save()
         return Response({
             'id': printshop.id,
-            'message': '인쇄소 등록이 완료되었습니다!',
-            'status': 'completed'
+            'message': '인쇄소 등록이 완료되었습니다! 사업자등록증 심의 후 등록이 최종 완료 됩니다. (최대 3일 소요)',
+            'status': 'pending'
         })
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -123,8 +123,12 @@ def printshop_create(request):
     """인쇄소 등록 (한 번에 모든 정보)"""
     serializer = PrintShopCreateSerializer(data=request.data)
     if serializer.is_valid():
-        serializer.save()
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
+        printshop = serializer.save()
+        return Response({
+            'id': printshop.id,
+            'message': '인쇄소 등록이 완료되었습니다! 사업자등록증 심의 후 등록이 최종 완료 됩니다. (최대 3일 소요)',
+            'status': 'pending'
+        }, status=status.HTTP_201_CREATED)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['GET'])

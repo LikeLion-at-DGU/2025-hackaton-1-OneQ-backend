@@ -131,8 +131,8 @@ class PrintShopFinalizeSerializer(serializers.ModelSerializer):
         # 최종 데이터 저장
         instance.password = validated_data['password']
         instance.business_license = validated_data['business_license']  # 필수이므로 항상 저장
-        instance.registration_status = 'completed'
-        instance.is_active = True
+        instance.registration_status = 'pending'  # 심의 대기 상태로 변경
+        instance.is_active = False  # 승인 전까지는 비활성화
         
         # 임시 데이터 초기화
         instance.temp_step1_data = {}
@@ -208,8 +208,8 @@ class PrintShopCreateSerializer(serializers.ModelSerializer):
         
         # 비밀번호 해싱
         validated_data['password'] = make_password(validated_data['password'])
-        validated_data['registration_status'] = 'completed'
-        validated_data['is_active'] = True
+        validated_data['registration_status'] = 'pending'  # 심의 대기 상태로 변경
+        validated_data['is_active'] = False  # 승인 전까지는 비활성화
         return super().create(validated_data)
 
 class PrintShopUpdateSerializer(serializers.ModelSerializer):
