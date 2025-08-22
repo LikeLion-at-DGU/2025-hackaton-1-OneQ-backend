@@ -2,6 +2,7 @@
 import json
 import re
 from typing import Dict, List
+from datetime import datetime
 from ..models import PrintShop
 from .gpt_client import GPTClient
 from .db_formatter import DBFormatter
@@ -934,8 +935,23 @@ JSON 형태로 응답해주세요:
                 try:
                     quote_result = self.calculate_quote(current_slots)
                     print(f"견적 계산 결과: {quote_result}")
-                    response['message'] = self._format_final_quote(quote_result)
+                    
+                    # 견적 데이터를 구조화된 형태로 추가
                     response['quote_data'] = quote_result
+                    response['final_quote'] = {
+                        'quote_number': f"ONEQ-{datetime.now().strftime('%Y-%m%d-%H%M')}",
+                        'created_date': datetime.now().strftime('%Y년 %m월 %d일'),
+                        'category': self.category,
+                        'slots': current_slots,
+                        'recommendations': quote_result.get('top3_recommendations', []),
+                        'total_available': quote_result.get('total_available', 0),
+                        'price_range': self._get_price_range(quote_result.get('quotes', [])),
+                        'formatted_message': self._format_final_quote(quote_result),
+                        'order_summary': self._create_order_summary(current_slots)
+                    }
+                    
+                    # 사용자에게는 간단한 확인 메시지만 전달
+                    response['message'] = "모든 정보가 수집되었습니다. 최종 견적을 확인해 주세요."
                     print("견적 리포트 생성 완료")
                 except Exception as e:
                     print(f"견적 리포트 생성 중 오류: {e}")
@@ -1097,6 +1113,37 @@ JSON 형태로 응답해주세요:
             return f"{min_price:,}원"
         else:
             return f"{min_price:,}원 ~ {max_price:,}원"
+    
+    def _create_order_summary(self, slots: Dict) -> Dict:
+        """주문 요약 정보 생성 (프론트엔드용)"""
+        summary = {
+            'print_type': f"{slots.get('category', '')}",
+            'size': slots.get('size', ''),
+            'quantity': f"{slots.get('quantity', 0)}부",
+            'paper': slots.get('paper', ''),
+            'finishing': slots.get('finishing', ''),
+            'coating': slots.get('coating', ''),
+            'printing': slots.get('printing', ''),
+            'due_days': f"{slots.get('due_days', 0)}일",
+            'budget': f"{slots.get('budget', 0):,}원" if slots.get('budget') else "없음",
+            'region': slots.get('region', '없음')
+        }
+        
+        # 카테고리별 특화 정보 추가
+        if slots.get('category') == '명함':
+            summary['print_type'] = f"명함 ({slots.get('size', '')})"
+        elif slots.get('category') == '포스터':
+            summary['print_type'] = f"포스터 ({slots.get('size', '')})"
+        elif slots.get('category') == '배너':
+            summary['print_type'] = f"배너 ({slots.get('size', '')})"
+        elif slots.get('category') == '스티커':
+            summary['print_type'] = f"스티커 ({slots.get('type', '')})"
+        elif slots.get('category') == '현수막':
+            summary['print_type'] = f"현수막 ({slots.get('size', '')})"
+        elif slots.get('category') == '브로슈어':
+            summary['print_type'] = f"브로슈어 ({slots.get('size', '')}, {slots.get('folding', '')}접지)"
+        
+        return summary
         
     
 
