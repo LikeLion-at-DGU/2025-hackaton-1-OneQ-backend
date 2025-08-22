@@ -64,6 +64,22 @@ def _coerce_numbers(slots: Dict) -> Dict:
         out['region'] = _norm_region(out['region'])
     return out
 
+def _sanitize_plain(text: str) -> str:
+    """출력에서 마크다운을 제거하고 순수 텍스트로 정리."""
+    if not text:
+        return ""
+    t = str(text)
+    # 굵게/이탤릭/코드 기호 제거
+    t = t.replace("**", "")
+    t = t.replace("__", "")
+    t = t.replace("`", "")
+    # 헤더/표시적 기호(#, >)는 행의 선두에서만 제거
+    t = re.sub(r"(?m)^\s*[#>\|]+\s*", "", t)
+    # 불필요한 연속 공백 정리
+    t = re.sub(r"[ \t]+", " ", t)
+    t = re.sub(r"\n{3,}", "\n\n", t)
+    return t.strip()
+
 class PrintShopAIService:
     """인쇄소 DB 기반 AI 챗봇 서비스 (GPT-4-mini 통합)"""
     
@@ -517,7 +533,8 @@ JSON 형태로 응답해주세요:
         missing_slots = self.conversation_manager.get_missing_slots(required)
         
         prompt = f"""
-당신은 인쇄 전문 챗봇입니다. 다음 인쇄소 DB 정보를 바탕으로 자유롭게 대화해주세요.
+너는 인쇄 전문 챗봇이다. 답변은 '순수 텍스트'로만 작성한다(마크다운 금지).
+DB 정보와 대화 맥락을 바탕으로 자연스럽게 대화하고, 추천 시에는 이유를 반드시 덧붙인다.
 
 === 인쇄소 DB 정보 ===
 {db_context}
@@ -563,10 +580,16 @@ JSON 형태로 응답해주세요:
    **최종 견적 리포트를 생성할 수 있습니다!**
    ```
 
-8. **굵은 글씨 활용**: 중요한 정보는 **굵은 글씨**로 강조하세요
-   - **주문 정보**, **견적 현황**, **추천 인쇄소** 등 섹션 제목
-   - **가격**, **연락처**, **제작기간** 등 핵심 정보
-   - **다음 단계**, **주의사항** 등 중요한 안내
+=== 응답 작성 규칙(중요) ===
+- 말투: 친절하고 담백. 과장 금지. 이모지는 가끔만.
+- 마크다운 금지(굵게/헤더/코드블록/표/링크 포맷 X). 불릿이 필요하면 하이픈(-)만 사용.
+- 정보 수집 단계에선 한 번에 하나씩 물어보고, 이미 받은 값은 재확인만 한다.
+- 용어 설명 요청엔 짧은 정의 + 언제 쓰면 좋은지 + 유의점 1개를 준다.
+- 추천/선택지 요청일 때 구조:
+    - 이렇게 추천해요: [핵심 제안 1줄]
+    - 이유: [핵심 근거 1~3줄]
+    - 대안: [상황 바뀔 때 선택지 1~2개]
+    - 다음으로 할 일: [사용자의 다음 입력/행동 가이드]
 
 === 중요: 견적 완료 시 처리 방식 ===
 7. **견적 리포트 생성**: 모든 정보 수집 완료 시 주문 진행이 아닌 견적 리포트 제공
@@ -581,11 +604,11 @@ JSON 형태로 응답해주세요:
 - **확인 요청**: 수집된 정보 확인 및 다음 단계 안내
 - **견적 리포트**: 모든 정보 수집 완료 시 견적 리포트 + 추천 인쇄소 TOP3 제공
 
-=== 응답 형시 ===
+=== 응답 형식 ===
 JSON 형태로 응답해주세요:
 {{
     "action": "ask/explain/modify/confirm/quote",
-    "message": "사용자에게 보낼 자연스러운 메시지",
+    "message": "사용자에게 보낼 자연스러운 순수 텍스트",
     "slots": {{"quantity": "200부", "paper": "아트지"}},
     "next_question": "다음 질문 (선택적)"
 }}
@@ -635,7 +658,7 @@ JSON 형태로 응답해주세요:
         if response.get('action') == 'quote':
             print("견적 완료 - 견적 리포트 생성")
             quote_result = self.calculate_quote(current_slots)
-            response['message'] = self._format_final_quote(quote_result)
+            response['message'] = _sanitize_plain(self._format_final_quote(quote_result))
             response['quote_data'] = quote_result
         
         return response
@@ -686,8 +709,8 @@ JSON 형태로 응답해주세요:
     
     def _format_confirmation_message(self, slots: Dict) -> str:
         """확인 메시지 포맷팅"""
-        message = f"**{self.category} 견적 정보 확인**\n\n"
-        
+        title = f"{self.category} 견적 정보 확인"
+        lines = [title, ""]
         slot_names = {
             'quantity': '수량',
             'paper': '용지',
@@ -704,13 +727,12 @@ JSON 형태로 응답해주세요:
             'budget': '예산(원)',
         }
         
-        for key, value in slots.items():
-            if value and key in slot_names:
-                message += f"• {slot_names[key]}: {value}\n"
-        
-        message += "\n이 견적에 해당되는 내용이 맞으실까요?"
-        
-        return message
+        for k, v in slots.items():
+            if v and k in slot_names:
+                lines.append(f"- {slot_names[k]}: {v}")
+        lines.append("")
+        lines.append("위 내용이 맞을까요?")
+        return "\n".join(lines)
     
     def calculate_quote(self, slots: Dict) -> Dict:
         """원큐스코어(가격40+납기30+작업30) 기반 TOP3 추천 + 전체 후보 리스팅"""
@@ -904,12 +926,12 @@ JSON 형태로 응답해주세요:
         if 'error' in quote_result:
             return f"죄송합니다. {quote_result['error']}"
         
-        response = f"**{self.category} 최종 견적 리포트**\n"
+        response = f"{self.category} 최종 견적 리포트\n"
         response += "=" * 50 + "\n\n"
         
         # 수집된 정보 요약
         slots = quote_result['slots']
-        response += "**주문 정보:**\n"
+        response += "주문 정보:\n"
         slot_names = {
             'quantity': '수량',
             'paper': '용지',
@@ -927,31 +949,31 @@ JSON 형태로 응답해주세요:
             if value and key in slot_names:
                 response += f"• {slot_names[key]}: {value}\n"
         
-        response += f"\n**견적 현황:**\n"
+        response += f"\n견적 현황:\n"
         response += f"• 총 {quote_result.get('total_available', 0)}개 인쇄소에서 견적 가능\n"
         response += f"• 가격대: {self._get_price_range(quote_result['quotes'])}\n\n"
         
-        response += "**추천 인쇄소 TOP3:**\n"
+        response += "추천 인쇄소 TOP3:\n"
         response += "-" * 30 + "\n"
         
         # TOP3 추천
         top3_recommendations = quote_result.get('top3_recommendations', [])
         for i, quote in enumerate(top3_recommendations, 1):
             response += f"{i}위. {quote['printshop_name']}\n"
-            response += f"   **추천 점수:** {quote.get('recommendation_score', 0):.1f}점\n"
-            response += f"   **추천 이유:** {quote.get('recommendation_reason', '안정적인 서비스')}\n"
-            response += f"   **연락처:** {quote['printshop_phone']}\n"
-            response += f"   **단가:** {quote['base_price']:,}원\n"
-            response += f"   **총액:** {quote['total_price']:,}원\n"
-            response += f"   **제작기간:** {quote['production_time']}\n"
-            response += f"   **배송:** {quote['delivery_options']}\n"
+            response += f"   추천 점수: {quote.get('recommendation_score', 0):.1f}점\n"
+            response += f"   추천 이유: {quote.get('recommendation_reason', '안정적인 서비스')}\n"
+            response += f"   연락처: {quote['printshop_phone']}\n"
+            response += f"   단가: {quote['base_price']:,}원\n"
+            response += f"   총액: {quote['total_price']:,}원\n"
+            response += f"   제작기간: {quote['production_time']}\n"
+            response += f"   배송: {quote['delivery_options']}\n"
             if quote.get('is_verified', False):
-                response += f"   **인증된 인쇄소**\n"
+                response += f"   인증된 인쇄소\n"
             response += "\n"
         
-        response += "**다음 단계:**\n"
+        response += "다음 단계:\n"
         response += "• 추천 인쇄소에 직접 연락하여 주문 진행\n"
-        response += "• **디자인 파일 준비:** AI, PSD, PDF, JPG 등 원본 파일과 함께 견적서를 가져가시면 됩니다\n"
+        response += "• 디자인 파일 준비: AI, PSD, PDF, JPG 등 원본 파일과 함께 견적서를 가져가시면 됩니다\n"
         response += "• 추가 문의사항이 있으시면 언제든 말씀해주세요!\n"
         response += "• 다른 옵션으로 견적을 다시 받고 싶으시면 '다시 견적받기'라고 말씀해주세요."
         
@@ -970,3 +992,5 @@ JSON 형태로 응답해주세요:
             return f"{min_price:,}원"
         else:
             return f"{min_price:,}원 ~ {max_price:,}원"
+        
+    
