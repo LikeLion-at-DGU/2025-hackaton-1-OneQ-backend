@@ -253,56 +253,120 @@ class PrintShopAIService:
         """용지 질문 (DB 정보 포함)"""
         papers = self._extract_papers_from_db()
         if papers:
-            return f"용지는 어떤 걸로 하시겠어요? ({', '.join(papers)})"
+            # 가격 정보 제거하고 옵션명만 표시
+            clean_papers = []
+            for paper in papers:
+                # 가격 정보가 포함된 경우 제거 (예: "아트지(1000원)" -> "아트지")
+                if '(' in paper and '원' in paper:
+                    clean_papers.append(paper.split('(')[0].strip())
+                else:
+                    clean_papers.append(paper)
+            return f"용지는 어떤 걸로 하시겠어요? ({', '.join(clean_papers)})"
         return "용지는 어떤 걸로 하시겠어요?"
     
     def _get_size_question(self) -> str:
         """사이즈 질문 (DB 정보 포함)"""
         sizes = self._extract_sizes_from_db()
         if sizes:
-            return f"사이즈는 어떻게 하시겠어요? ({', '.join(sizes)})"
+            # 가격 정보 제거하고 옵션명만 표시
+            clean_sizes = []
+            for size in sizes:
+                # 가격 정보가 포함된 경우 제거
+                if '(' in size and '원' in size:
+                    clean_sizes.append(size.split('(')[0].strip())
+                else:
+                    clean_sizes.append(size)
+            return f"사이즈는 어떻게 하시겠어요? ({', '.join(clean_sizes)})"
         return "사이즈는 어떻게 하시겠어요?"
     
     def _get_finishing_question(self) -> str:
         """후가공 질문 (DB 정보 포함)"""
         finishing_options = self._extract_finishing_from_db()
         if finishing_options:
-            return f"후가공 옵션은 어떤 걸 원하시나요? ({', '.join(finishing_options)})"
+            # 가격 정보 제거하고 옵션명만 표시
+            clean_options = []
+            for option in finishing_options:
+                # 가격 정보가 포함된 경우 제거
+                if '(' in option and '원' in option:
+                    clean_options.append(option.split('(')[0].strip())
+                else:
+                    clean_options.append(option)
+            return f"후가공 옵션은 어떤 걸 원하시나요? ({', '.join(clean_options)})"
         return "후가공 옵션은 어떤 걸 원하시나요?"
     
     def _get_coating_question(self) -> str:
         """코팅 질문 (DB 정보 포함)"""
         coating_options = self._extract_coating_from_db()
         if coating_options:
-            return f"코팅 옵션은 어떤 걸 원하시나요? ({', '.join(coating_options)})"
+            # 가격 정보 제거하고 옵션명만 표시
+            clean_options = []
+            for option in coating_options:
+                # 가격 정보가 포함된 경우 제거
+                if '(' in option and '원' in option:
+                    clean_options.append(option.split('(')[0].strip())
+                else:
+                    clean_options.append(option)
+            return f"코팅 옵션은 어떤 걸 원하시나요? ({', '.join(clean_options)})"
         return "코팅 옵션은 어떤 걸 원하시나요?"
     
     def _get_type_question(self) -> str:
         """종류 질문 (DB 정보 포함)"""
         types = self._extract_types_from_db()
         if types:
-            return f"어떤 종류로 하시겠어요? ({', '.join(types)})"
+            # 가격 정보 제거하고 옵션명만 표시
+            clean_types = []
+            for type_option in types:
+                # 가격 정보가 포함된 경우 제거
+                if '(' in type_option and '원' in type_option:
+                    clean_types.append(type_option.split('(')[0].strip())
+                else:
+                    clean_types.append(type_option)
+            return f"어떤 종류로 하시겠어요? ({', '.join(clean_types)})"
         return "어떤 종류로 하시겠어요?"
     
     def _get_stand_question(self) -> str:
         """거치대 질문 (DB 정보 포함)"""
         stands = self._extract_stands_from_db()
         if stands:
-            return f"거치대는 어떤 걸 원하시나요? ({', '.join(stands)})"
+            # 가격 정보 제거하고 옵션명만 표시
+            clean_stands = []
+            for stand in stands:
+                # 가격 정보가 포함된 경우 제거
+                if '(' in stand and '원' in stand:
+                    clean_stands.append(stand.split('(')[0].strip())
+                else:
+                    clean_stands.append(stand)
+            return f"거치대는 어떤 걸 원하시나요? ({', '.join(clean_stands)})"
         return "거치대는 어떤 걸 원하시나요?"
     
     def _get_processing_question(self) -> str:
         """가공 질문 (DB 정보 포함)"""
         processing_options = self._extract_processing_from_db()
         if processing_options:
-            return f"추가 가공 옵션은 어떤 걸 원하시나요? ({', '.join(processing_options)})"
+            # 가격 정보 제거하고 옵션명만 표시
+            clean_options = []
+            for option in processing_options:
+                # 가격 정보가 포함된 경우 제거
+                if '(' in option and '원' in option:
+                    clean_options.append(option.split('(')[0].strip())
+                else:
+                    clean_options.append(option)
+            return f"추가 가공 옵션은 어떤 걸 원하시나요? ({', '.join(clean_options)})"
         return "추가 가공 옵션은 어떤 걸 원하시나요?"
     
     def _get_folding_question(self) -> str:
         """접지 질문 (DB 정보 포함)"""
         folding_options = self._extract_folding_from_db()
         if folding_options:
-            return f"접지 방식은 어떤 걸 원하시나요? ({', '.join(folding_options)})"
+            # 가격 정보 제거하고 옵션명만 표시
+            clean_options = []
+            for option in folding_options:
+                # 가격 정보가 포함된 경우 제거
+                if '(' in option and '원' in option:
+                    clean_options.append(option.split('(')[0].strip())
+                else:
+                    clean_options.append(option)
+            return f"접지 방식은 어떤 걸 원하시나요? ({', '.join(clean_options)})"
         return "접지 방식은 어떤 걸 원하시나요?"
     
     # DB에서 정보 추출 함수 (자연어 처리 기반)
@@ -523,41 +587,49 @@ JSON 형태로 응답해주세요:
     
     def process_user_message(self, message: str, current_slots: Dict) -> Dict:
         """사용자 메시지 처리 (GPT-4-mini 기반)"""
-        # GPT 사용 가능하면 GPT로 처리, 아니면 간단한 기본 응답
-        if self.use_gpt:
-            try:
-                return self._process_conversation_with_gpt(message, current_slots)
-            except Exception as e:
-                print(f"GPT 처리 오류: {e}")
+        try:
+            # GPT 사용 가능하면 GPT로 처리, 아니면 간단한 기본 응답
+            if self.use_gpt:
+                try:
+                    return self._process_conversation_with_gpt(message, current_slots)
+                except Exception as e:
+                    print(f"GPT 처리 오류: {e}")
+                    return self._simple_fallback_response(message, current_slots)
+            else:
                 return self._simple_fallback_response(message, current_slots)
-        else:
+        except Exception as e:
+            print(f"사용자 메시지 처리 중 오류: {e}")
             return self._simple_fallback_response(message, current_slots)
     
     def _process_conversation_with_gpt(self, message: str, current_slots: Dict) -> Dict:
         """GPT-4-mini로 대화 처리"""
-        print(f"GPT 처리 시작 - 메시지: {message}")  # 디버깅 로그
-        
-        # 대화 히스토리 업데이트 (이미 로드된 경우 중복 방지)
-        if not self.conversation_manager.conversation_history or \
-           self.conversation_manager.conversation_history[-1]['content'] != message:
-            self.conversation_manager.add_message('user', message)
-        
-        # DB 컨텍스트 생성
-        db_context = self.db_formatter.format_context_for_gpt()
-        
-        # 대화 컨텍스트 생성
-        conversation_context = self.conversation_manager.get_recent_context()
-        
-        # GPT 프롬프트 생성
-        prompt = self._create_gpt_prompt(message, current_slots, db_context, conversation_context)
-        print(f"GPT 프롬프트 생성 완료")  # 디버깅 로그
-        
-        # GPT API 호출
-        response = self.gpt_client.process_conversation(prompt)
-        print(f"GPT API 응답: {response}")  # 디버깅 로그
-        
-        # 응답 처리
-        return self._process_gpt_response(response, current_slots)
+        try:
+            print(f"GPT 처리 시작 - 메시지: {message}")  # 디버깅 로그
+            
+            # 대화 히스토리 업데이트 (이미 로드된 경우 중복 방지)
+            if not self.conversation_manager.conversation_history or \
+               self.conversation_manager.conversation_history[-1]['content'] != message:
+                self.conversation_manager.add_message('user', message)
+            
+            # DB 컨텍스트 생성
+            db_context = self.db_formatter.format_context_for_gpt()
+            
+            # 대화 컨텍스트 생성
+            conversation_context = self.conversation_manager.get_recent_context()
+            
+            # GPT 프롬프트 생성
+            prompt = self._create_gpt_prompt(message, current_slots, db_context, conversation_context)
+            print(f"GPT 프롬프트 생성 완료")  # 디버깅 로그
+            
+            # GPT API 호출
+            response = self.gpt_client.process_conversation(prompt)
+            print(f"GPT API 응답: {response}")  # 디버깅 로그
+            
+            # 응답 처리
+            return self._process_gpt_response(response, current_slots)
+        except Exception as e:
+            print(f"GPT 대화 처리 중 오류: {e}")
+            return self._simple_fallback_response(message, current_slots)
     
     def _create_gpt_prompt(self, message: str, current_slots: Dict, db_context: str, conversation_context: str) -> str:
         """GPT 프롬프트 생성"""
@@ -605,6 +677,7 @@ DB 정보와 대화 맥락을 바탕으로 자연스럽게 대화하고, 추천 
 4. **맥락 이해**: 이전 대화를 고려하여 적절한 응답
 5. **상태 기억**: 이미 수집된 정보는 다시 묻지 말고 다음 단계로 진행
 6. **슬롯 업데이트**: 사용자 메시지에서 정보를 추출하여 적절한 슬롯에 저장
+7. **가격 정보 제외**: 질문할 때는 가격 정보를 말하지 말고 옵션명만 제공하세요
 
 === 가독성 개선 지침 ===
 7. **정보 요약 시 가독성**: 수집된 정보를 요약할 때는 다음과 같이 작성하세요:
@@ -632,6 +705,7 @@ DB 정보와 대화 맥락을 바탕으로 자연스럽게 대화하고, 추천 
     - 이유: [핵심 근거 1~3줄]
     - 대안: [상황 바뀔 때 선택지 1~2개]
     - 다음으로 할 일: [사용자의 다음 입력/행동 가이드]
+- 가격 정보 제외: 질문할 때는 가격 정보를 절대 말하지 말고 옵션명만 제공하세요.
 
 === 중요: 견적 완료 시 처리 방식 ===
 7. **견적 리포트 생성**: 모든 정보 수집 완료 시 주문 진행이 아닌 견적 리포트 제공
@@ -672,53 +746,57 @@ JSON 형태로 응답해주세요:
     
     def _process_gpt_response(self, response: Dict, current_slots: Dict) -> Dict:
         """GPT 응답 처리"""
-        print(f"=== GPT 응답 처리 디버깅 시작 ===")
-        print(f"GPT 원본 응답: {response}")
-        print(f"GPT 응답 타입: {type(response)}")
-        
-        if 'error' in response:
-            print(f"GPT 오류 발생: {response['error']}")
-            return self._simple_fallback_response("", current_slots)
-        
-        # 응답이 없거나 잘못된 경우 간단한 폴백
-        if 'message' not in response or not response['message']:
-            print("GPT 응답에 메시지가 없음 - 간단한 폴백 처리")
-            return self._simple_fallback_response("", current_slots)
-        
-        # 슬롯 업데이트
-        if 'slots' in response and response['slots']:
-            try:
-                coerced = _coerce_numbers(response['slots']) # 숫자/금액/지역 정규화
-                current_slots.update(coerced)
-                self.conversation_manager.update_slots(coerced)
-                print(f"슬롯 업데이트: {coerced}")
-            except Exception as e:
-                print(f"슬롯 업데이트 중 오류: {e}")
-        
-        # 대화 히스토리에 응답 추가 (중복 방지)
-        if 'message' in response:
-            try:
-                if not self.conversation_manager.conversation_history or \
-                    self.conversation_manager.conversation_history[-1]['content'] != response['message']:
-                    self.conversation_manager.add_message('assistant', response['message'])
-            except Exception as e:
-                print(f"대화 히스토리 업데이트 중 오류: {e}")
-        
-        # 견적 완료 시 견적 리포트 생성
-        if response.get('action') == 'quote':
-            print("견적 완료 - 견적 리포트 생성 시작")
-            try:
-                quote_result = self.calculate_quote(current_slots)
-                print(f"견적 계산 결과: {quote_result}")
-                response['message'] = self._format_final_quote(quote_result)
-                response['quote_data'] = quote_result
-                print("견적 리포트 생성 완료")
-            except Exception as e:
-                print(f"견적 리포트 생성 중 오류: {e}")
+        try:
+            print(f"=== GPT 응답 처리 디버깅 시작 ===")
+            print(f"GPT 원본 응답: {response}")
+            print(f"GPT 응답 타입: {type(response)}")
+            
+            if 'error' in response:
+                print(f"GPT 오류 발생: {response['error']}")
                 return self._simple_fallback_response("", current_slots)
-        
-        print(f"=== GPT 응답 처리 완료 ===")
-        return response
+            
+            # 응답이 없거나 잘못된 경우 간단한 폴백
+            if 'message' not in response or not response['message']:
+                print("GPT 응답에 메시지가 없음 - 간단한 폴백 처리")
+                return self._simple_fallback_response("", current_slots)
+            
+            # 슬롯 업데이트
+            if 'slots' in response and response['slots']:
+                try:
+                    coerced = _coerce_numbers(response['slots']) # 숫자/금액/지역 정규화
+                    current_slots.update(coerced)
+                    self.conversation_manager.update_slots(coerced)
+                    print(f"슬롯 업데이트: {coerced}")
+                except Exception as e:
+                    print(f"슬롯 업데이트 중 오류: {e}")
+            
+            # 대화 히스토리에 응답 추가 (중복 방지)
+            if 'message' in response:
+                try:
+                    if not self.conversation_manager.conversation_history or \
+                        self.conversation_manager.conversation_history[-1]['content'] != response['message']:
+                        self.conversation_manager.add_message('assistant', response['message'])
+                except Exception as e:
+                    print(f"대화 히스토리 업데이트 중 오류: {e}")
+            
+            # 견적 완료 시 견적 리포트 생성
+            if response.get('action') == 'quote':
+                print("견적 완료 - 견적 리포트 생성 시작")
+                try:
+                    quote_result = self.calculate_quote(current_slots)
+                    print(f"견적 계산 결과: {quote_result}")
+                    response['message'] = self._format_final_quote(quote_result)
+                    response['quote_data'] = quote_result
+                    print("견적 리포트 생성 완료")
+                except Exception as e:
+                    print(f"견적 리포트 생성 중 오류: {e}")
+                    return self._simple_fallback_response("", current_slots)
+            
+            print(f"=== GPT 응답 처리 완료 ===")
+            return response
+        except Exception as e:
+            print(f"GPT 응답 처리 중 오류: {e}")
+            return self._simple_fallback_response("", current_slots)
     
     def _simple_fallback_response(self, message: str, current_slots: Dict) -> Dict:
         """GPT 실패 시 간단한 기본 응답"""
@@ -793,63 +871,67 @@ JSON 형태로 응답해주세요:
     
     def calculate_quote(self, slots: Dict) -> Dict:
         """원큐스코어(가격40+납기30+작업30) 기반 TOP3 추천 + 전체 후보 리스팅"""
-        print(f"견적 계산(ONEQ SCORE) - 카테고리: {self.category}, 슬롯: {slots}")
-        print(f"등록된 인쇄소 수: {len(self.printshops)}")
+        try:
+            print(f"견적 계산(ONEQ SCORE) - 카테고리: {self.category}, 슬롯: {slots}")
+            print(f"등록된 인쇄소 수: {len(self.printshops)}")
 
-        if not self.printshops:
-            return {'error': '등록된 인쇄소가 없습니다.'}
+            if not self.printshops:
+                return {'error': '등록된 인쇄소가 없습니다.'}
 
-        # 카테고리 정보가 slots['category']에 없을 수 있으니 보강
-        slots = dict(slots or {})
-        slots.setdefault("category", self.category)
+            # 카테고리 정보가 slots['category']에 없을 수 있으니 보강
+            slots = dict(slots or {})
+            slots.setdefault("category", self.category)
 
-        ranked = score_and_rank(slots, self.printshops)
-        if ranked["count"] == 0:
-            return {'error': '조건에 맞는 인쇄소가 없습니다. 정보를 다시 확인해주세요.'}
+            ranked = score_and_rank(slots, self.printshops)
+            if ranked["count"] == 0:
+                return {'error': '조건에 맞는 인쇄소가 없습니다. 정보를 다시 확인해주세요.'}
 
-        # 기존 포맷과 호환되게 가공
-        quotes = []
-        for r in ranked["all"]:
-            quotes.append({
-                'printshop_name': r['shop_name'],
-                'printshop_phone': r['phone'],
-                'base_price': int(r['total_price'] / max(1, _to_int(slots.get("quantity"), 1))),  # 대략 단가
-                'quantity': _to_int(slots.get("quantity"), 1),
-                'total_price': r['total_price'],
-                'production_time': r['production_time'],
-                'delivery_options': r['delivery_options'],
-                'is_verified': r['is_verified'],
-                # 디버깅/표시용
-                'oneq_scores': r['scores'],   # {'price':..,'due':..,'work':..,'oneq_total':..}
-                'eta_hours': r['eta_hours'],
-            })
+            # 기존 포맷과 호환되게 가공
+            quotes = []
+            for r in ranked["all"]:
+                quotes.append({
+                    'printshop_name': r['shop_name'],
+                    'printshop_phone': r['phone'],
+                    'base_price': int(r['total_price'] / max(1, _to_int(slots.get("quantity"), 1))),  # 대략 단가
+                    'quantity': _to_int(slots.get("quantity"), 1),
+                    'total_price': r['total_price'],
+                    'production_time': r['production_time'],
+                    'delivery_options': r['delivery_options'],
+                    'is_verified': r['is_verified'],
+                    # 디버깅/표시용
+                    'oneq_scores': r['scores'],   # {'price':..,'due':..,'work':..,'oneq_total':..}
+                    'eta_hours': r['eta_hours'],
+                })
 
-        # TOP3: 기존 키 사용(recommendation_score/_reason)
-        top3 = []
-        for r in ranked["items"]:
-            score = r['scores']['oneq_total']
-            pr, du, wk = r['scores']['price'], r['scores']['due'], r['scores']['work']
-            reason = f"가격 {pr:.0f} / 납기 {du:.0f} / 작업 {wk:.0f}"
-            top3.append({
-                'printshop_name': r['shop_name'],
-                'printshop_phone': r['phone'],
-                'base_price': int(r['total_price'] / max(1, _to_int(slots.get("quantity"), 1))),
-                'quantity': _to_int(slots.get("quantity"), 1),
-                'total_price': r['total_price'],
-                'production_time': r['production_time'],
-                'delivery_options': r['delivery_options'],
-                'is_verified': r['is_verified'],
-                'recommendation_score': score,            # 기존 포맷 호환
-                'recommendation_reason': reason
-            })
+            # TOP3: 기존 키 사용(recommendation_score/_reason)
+            top3 = []
+            for r in ranked["items"]:
+                score = r['scores']['oneq_total']
+                pr, du, wk = r['scores']['price'], r['scores']['due'], r['scores']['work']
+                reason = f"가격 {pr:.0f} / 납기 {du:.0f} / 작업 {wk:.0f}"
+                top3.append({
+                    'printshop_name': r['shop_name'],
+                    'printshop_phone': r['phone'],
+                    'base_price': int(r['total_price'] / max(1, _to_int(slots.get("quantity"), 1))),
+                    'quantity': _to_int(slots.get("quantity"), 1),
+                    'total_price': r['total_price'],
+                    'production_time': r['production_time'],
+                    'delivery_options': r['delivery_options'],
+                    'is_verified': r['is_verified'],
+                    'recommendation_score': score,            # 기존 포맷 호환
+                    'recommendation_reason': reason
+                })
 
-        return {
-            'category': self.category,
-            'slots': slots,
-            'quotes': quotes,
-            'top3_recommendations': top3,
-            'total_available': len(quotes)
-        }
+            return {
+                'category': self.category,
+                'slots': slots,
+                'quotes': quotes,
+                'top3_recommendations': top3,
+                'total_available': len(quotes)
+            }
+        except Exception as e:
+            print(f"견적 계산 오류: {e}")
+            return {'error': f'견적 계산 중 오류가 발생했습니다: {str(e)}'}
     
     def _calculate_single_quote(self, printshop: PrintShop, slots: Dict) -> Optional[Dict]:
         """단일 인쇄소 견적 계산"""
@@ -1049,5 +1131,112 @@ JSON 형태로 응답해주세요:
             return f"{min_price:,}원"
         else:
             return f"{min_price:,}원 ~ {max_price:,}원"
+        
+    
+
+# 전역 AI 서비스 인스턴스 (카테고리별로 생성)
+_ai_services = {}
+
+def get_ai_service(category: str) -> PrintShopAIService:
+    """카테고리별 AI 서비스 인스턴스 반환 (싱글톤 패턴)"""
+    if category not in _ai_services:
+        _ai_services[category] = PrintShopAIService(category)
+    return _ai_services[category]
+
+def ask_action(history: List[Dict], slots: Dict) -> Dict:
+    """AI 액션 결정 (orchestrator에서 호출)"""
+    try:
+        # 카테고리 추출 (기본값: 포스터)
+        category = slots.get('category', '포스터')
+        ai_service = get_ai_service(category)
+        
+        # 마지막 사용자 메시지 추출
+        user_message = ""
+        if history:
+            for msg in reversed(history):
+                if msg.get('role') == 'user':
+                    user_message = msg.get('content', '')
+                    break
+        
+        # AI 서비스로 메시지 처리
+        response = ai_service.process_user_message(user_message, slots)
+        
+        # 응답 형식 통일
+        return {
+            'action': response.get('action', 'ASK'),
+            'message': response.get('message', ''),
+            'filled_slots': response.get('slots', {}),
+            'question': response.get('next_question', '')
+        }
+        
+    except Exception as e:
+        print(f"ask_action 오류: {e}")
+        return {
+            'action': 'ASK',
+            'message': '죄송합니다. AI 서비스에 일시적인 문제가 있습니다. 다시 한 번 말씀해주세요.',
+            'filled_slots': {},
+            'question': ''
+        }
+
+def generate_quote_report(slots: Dict) -> str:
+    """견적 리포트 생성"""
+    try:
+        category = slots.get('category', '포스터')
+        ai_service = get_ai_service(category)
+        quote_result = ai_service.calculate_quote(slots)
+        return ai_service._format_final_quote(quote_result)
+    except Exception as e:
+        print(f"견적 리포트 생성 오류: {e}")
+        return "죄송합니다. 견적 리포트 생성 중 오류가 발생했습니다."
+
+def recommend_shops(slots: Dict) -> List[Dict]:
+    """인쇄소 추천"""
+    try:
+        category = slots.get('category', '포스터')
+        ai_service = get_ai_service(category)
+        quote_result = ai_service.calculate_quote(slots)
+        
+        if 'error' in quote_result:
+            return []
+        
+        return quote_result.get('top3_recommendations', [])
+    except Exception as e:
+        print(f"인쇄소 추천 오류: {e}")
+        return []
+
+def format_shop_recommendation(shop: Dict) -> str:
+    """인쇄소 추천 정보 포맷팅"""
+    try:
+        return f"""🏢 {shop.get('printshop_name', '알 수 없음')}
+📞 {shop.get('printshop_phone', '연락처 없음')}
+💰 단가: {shop.get('base_price', 0):,}원
+💵 총액: {shop.get('total_price', 0):,}원
+⏰ 제작기간: {shop.get('production_time', '문의')}
+🚚 배송: {shop.get('delivery_options', '문의')}
+⭐ 추천점수: {shop.get('recommendation_score', 0):.1f}점
+💡 추천이유: {shop.get('recommendation_reason', '안정적인 서비스')}"""
+    except Exception as e:
+        print(f"인쇄소 포맷팅 오류: {e}")
+        return "인쇄소 정보를 불러올 수 없습니다."
+
+def cached_polish(term: str, facts: Dict, user_msg: str) -> str:
+    """용어 설명 생성 (캐시된 버전)"""
+    try:
+        if not facts:
+            return f"'{term}'에 대한 정보가 아직 준비되지 않았습니다."
+        
+        # 간단한 용어 설명 생성
+        explanation = f"{term}에 대한 설명:\n\n"
+        
+        for key, value in facts.items():
+            if isinstance(value, dict):
+                explanation += f"• {key}: {value.get('description', '설명 없음')}\n"
+            else:
+                explanation += f"• {key}: {value}\n"
+        
+        return explanation
+    except Exception as e:
+        print(f"용어 설명 생성 오류: {e}")
+        return f"'{term}'에 대한 설명을 생성할 수 없습니다."
         
     
