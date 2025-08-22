@@ -84,6 +84,10 @@ class PrintShopAIService:
     """인쇄소 DB 기반 AI 챗봇 서비스 (GPT-4-mini 통합)"""
     
     def __init__(self, category: str):
+        print(f"=== AI 서비스 초기화 ===")
+        print(f"전달받은 카테고리: {category}")
+        print(f"카테고리 타입: {type(category)}")
+        
         self.category = category # "명함", "배너", "포스터" 등 카테고리 수집
         self.printshops = self._get_printshops_by_category(category) # 해당 카테고리를 지원하는 인쇄소만 필터링
         self.category_info = self._get_category_info() # 카테고리별 정보 수집
@@ -95,6 +99,9 @@ class PrintShopAIService:
         
         # GPT 사용 가능 여부 확인
         self.use_gpt = self.gpt_client.is_available()
+        
+        print(f"AI 서비스 카테고리: {self.category}")
+        print(f"=== AI 서비스 초기화 완료 ===")
     
     def _get_printshops_by_category(self, category: str) -> List[PrintShop]:
         """카테고리별 인쇄소 조회"""
@@ -665,37 +672,52 @@ JSON 형태로 응답해주세요:
     
     def _process_gpt_response(self, response: Dict, current_slots: Dict) -> Dict:
         """GPT 응답 처리"""
-        print(f"GPT 원본 응답: {response}")  # 디버깅 로그
+        print(f"=== GPT 응답 처리 디버깅 시작 ===")
+        print(f"GPT 원본 응답: {response}")
+        print(f"GPT 응답 타입: {type(response)}")
         
         if 'error' in response:
             print(f"GPT 오류 발생: {response['error']}")
             return self._simple_fallback_response("", current_slots)
-        
-        # 슬롯 업데이트
-        if 'slots' in response and response['slots']:
-            coerced = _coerce_numbers(response['slots']) # 숫자/금액/지역 정규화
-            current_slots.update(coerced)
-            self.conversation_manager.update_slots(coerced)
-            print(f"슬롯 업데이트: {coerced}")
-        
-        # 대화 히스토리에 응답 추가 (중복 방지)
-        if 'message' in response:
-            if not self.conversation_manager.conversation_history or \
-                self.conversation_manager.conversation_history[-1]['content'] != response['message']:
-                self.conversation_manager.add_message('assistant', response['message'])
         
         # 응답이 없거나 잘못된 경우 간단한 폴백
         if 'message' not in response or not response['message']:
             print("GPT 응답에 메시지가 없음 - 간단한 폴백 처리")
             return self._simple_fallback_response("", current_slots)
         
+        # 슬롯 업데이트
+        if 'slots' in response and response['slots']:
+            try:
+                coerced = _coerce_numbers(response['slots']) # 숫자/금액/지역 정규화
+                current_slots.update(coerced)
+                self.conversation_manager.update_slots(coerced)
+                print(f"슬롯 업데이트: {coerced}")
+            except Exception as e:
+                print(f"슬롯 업데이트 중 오류: {e}")
+        
+        # 대화 히스토리에 응답 추가 (중복 방지)
+        if 'message' in response:
+            try:
+                if not self.conversation_manager.conversation_history or \
+                    self.conversation_manager.conversation_history[-1]['content'] != response['message']:
+                    self.conversation_manager.add_message('assistant', response['message'])
+            except Exception as e:
+                print(f"대화 히스토리 업데이트 중 오류: {e}")
+        
         # 견적 완료 시 견적 리포트 생성
         if response.get('action') == 'quote':
-            print("견적 완료 - 견적 리포트 생성")
-            quote_result = self.calculate_quote(current_slots)
-            response['message'] = _sanitize_plain(self._format_final_quote(quote_result))
-            response['quote_data'] = quote_result
+            print("견적 완료 - 견적 리포트 생성 시작")
+            try:
+                quote_result = self.calculate_quote(current_slots)
+                print(f"견적 계산 결과: {quote_result}")
+                response['message'] = self._format_final_quote(quote_result)
+                response['quote_data'] = quote_result
+                print("견적 리포트 생성 완료")
+            except Exception as e:
+                print(f"견적 리포트 생성 중 오류: {e}")
+                return self._simple_fallback_response("", current_slots)
         
+        print(f"=== GPT 응답 처리 완료 ===")
         return response
     
     def _simple_fallback_response(self, message: str, current_slots: Dict) -> Dict:
