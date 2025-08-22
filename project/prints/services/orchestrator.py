@@ -134,20 +134,29 @@ def _handle_explain_action(action_payload: Dict, slots: Dict, user_msg: str) -> 
 
 def _handle_match_action(action_payload: Dict, slots: Dict) -> Dict:
     """MATCH 액션 처리 - 최종 견적서 생성 및 인쇄소 추천"""
-    # 최종 견적서 생성
-    quote_report = ai.generate_quote_report(slots)
-    
-    # 조건에 맞는 인쇄소 TOP 3 추천
-    recommended_shops = ai.recommend_shops(slots)
-    
-    # 추천 인쇄소 정보 포맷팅
-    shop_recommendations = []
-    for i, shop in enumerate(recommended_shops, 1):
-        shop_info = ai.format_shop_recommendation(shop)
-        shop_recommendations.append(f"🥇 {i}위\n{shop_info}")
-    
-    # 최종 메시지 조합
-    final_message = f"""{quote_report}
+    try:
+        # 최종 견적서 생성
+        quote_report = ai.generate_quote_report(slots)
+        
+        # 조건에 맞는 인쇄소 TOP 3 추천
+        recommended_shops = ai.recommend_shops(slots)
+        
+        # 추천 인쇄소 정보 포맷팅
+        shop_recommendations = []
+        if recommended_shops:
+            for i, shop in enumerate(recommended_shops, 1):
+                try:
+                    shop_info = ai.format_shop_recommendation(shop)
+                    shop_recommendations.append(f"🥇 {i}위\n{shop_info}")
+                except Exception as e:
+                    print(f"인쇄소 포맷팅 오류: {e}")
+                    # 오류 발생 시 기본 정보만 표시
+                    shop_recommendations.append(f"🥇 {i}위\n🏢 {shop.get('printshop_name', '알 수 없음')}\n📞 {shop.get('printshop_phone', '연락처 없음')}")
+        else:
+            shop_recommendations.append("조건에 맞는 인쇄소를 찾을 수 없습니다. 다른 옵션으로 다시 시도해보세요.")
+        
+        # 최종 메시지 조합
+        final_message = f"""{quote_report}
 
 🎯 추천 인쇄소
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -156,14 +165,21 @@ def _handle_match_action(action_payload: Dict, slots: Dict) -> Dict:
 
 💡 다음 단계:
 1. 추천 인쇄소에 직접 연락하여 당신만의 인쇄를 즐기세요! 🎨✨"""
-    
-    return {
-        "type": "match",
-        "quote_report": quote_report,
-        "recommended_shops": recommended_shops,
-        "message": final_message,
-        "slots": slots
-    }
+        
+        return {
+            "type": "match",
+            "quote_report": quote_report,
+            "recommended_shops": recommended_shops,
+            "message": final_message,
+            "slots": slots
+        }
+    except Exception as e:
+        print(f"MATCH 액션 처리 오류: {e}")
+        return {
+            "type": "error",
+            "message": "죄송합니다. 견적 리포트 생성 중 오류가 발생했습니다. 다시 시도해주세요.",
+            "slots": slots
+        }
 
 def _handle_confirm_action(action_payload: Dict, slots: Dict, user_msg: str) -> Dict:
     """CONFIRM 액션 처리"""
