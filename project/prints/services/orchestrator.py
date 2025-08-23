@@ -11,12 +11,22 @@ def handle_message(history: List[Dict], slots: Dict, user_msg: str) -> Dict:
     # 히스토리에 현재 입력 추가
     history = (history or []) + [{"role": "user", "content": user_msg}]
     
+    # item_type → category 보강(한글 카테고리)
+    _kmap = {"BUSINESS_CARD":"명함","STICKER":"스티커","BANNER":"배너","SIGN":"간판"}
+    if "category" not in slots or not slots.get("category"):
+        slots["category"] = _kmap.get(slots.get("item_type","BUSINESS_CARD"), "포스터")
+
     # AI가 다음 액션 결정
     action_payload = ai.ask_action(history, slots)
-    act = action_payload.get("action", "ASK")
+    act = (action_payload.get("action", "ASK") or "ASK").upper()
+    if act == "QUOTE":
+        act = "MATCH"
     
     print(f"DEBUG: AI action={act}, payload={action_payload}")
     
+    if act == "MODIFY":  # 수정 의도는 ASK 플로우로 흡수
+        act = "ASK"
+
     # ASK: 견적 정보 수집
     if act == "ASK":
         return _handle_ask_action(action_payload, slots, user_msg)
@@ -134,6 +144,21 @@ def _handle_explain_action(action_payload: Dict, slots: Dict, user_msg: str) -> 
 
 def _handle_match_action(action_payload: Dict, slots: Dict) -> Dict:
     """MATCH 액션 처리 - 최종 견적서 생성 및 인쇄소 추천"""
+
+    missing = spec.find_missing(slots)
+    # 예산
+    if not slots.get("budget"):
+        missing = list(set(missing + ["budget"]))
+    if missing:
+        next_q = spec.next_question(slots)
+        return {
+            "type": "ask",
+            "question": next_q["question"],
+            "choices": next_q.get("choices", []),
+            "slots": slots,
+            "missing": missing
+        }
+
     try:
         # 최종 견적서 생성
         quote_report = ai.generate_quote_report(slots)

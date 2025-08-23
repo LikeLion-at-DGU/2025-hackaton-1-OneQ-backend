@@ -8,6 +8,59 @@ from .gpt_client import GPTClient
 from .db_formatter import DBFormatter
 from .conversation_manager import ConversationManager
 from .oneqscore import score_and_rank
+from datetime import datetime, timedelta
+
+_def_tz_now = lambda: datetime.now()
+
+
+def _parse_due_date(value):
+    """
+    '8월 25일', '08-25', '8/25', '내일', '모레', '2025-08-25' 등 → datetime.date
+    연도 생략 시: 올해 기준, 이미 지났으면 내년으로 가정
+    """
+    if not value: 
+        return None
+    s = str(value).strip().lower()
+    now = _def_tz_now()
+
+    # 상대표현
+    if s in ("내일", "다음날", "다음 날"):
+        return (now + timedelta(days=1)).date()
+    if s in ("모레",):
+        return (now + timedelta(days=2)).date()
+
+    # YYYY-MM-DD
+    m = re.match(r"^(\d{4})[.\-\/](\d{1,2})[.\-\/](\d{1,2})$", s)
+    if m:
+        y, M, d = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        return datetime(y, M, d).date()
+
+    # MM-DD, MM/DD, MM월 DD일
+    m = re.match(r"^(?:\D)?(\d{1,2})[.\-\/\s]*월?\s*(\d{1,2})[일]?$", s)
+    if not m:
+        m = re.match(r"^(\d{1,2})[.\-\/](\d{1,2})$", s)
+    if m:
+        y = now.year
+        M, d = int(m.group(1)), int(m.group(2))
+        dt = datetime(y, M, d).date()
+        if dt < now.date():
+            # 지났으면 내년
+            dt = datetime(y + 1, M, d).date()
+        return dt
+
+    return None
+
+def _norm_delivery_method(v: str) -> str:
+    """
+    사용자 표현 정규화: 픽업/택배/퀵(당일)/차량
+    """
+    s = (v or "").strip().lower()
+    if any(k in s for k in ["픽업", "방문", "수령"]): return "pickup"
+    if any(k in s for k in ["퀵"]): return "courier"
+    if any(k in s for k in ["차량", "화물", "직배송"]): return "truck"
+    if any(k in s for k in ["택배", "배송"]): return "parcel"
+    return ""
+
 
 def _to_int(v, default=0):
     if isinstance(v, int): 
@@ -76,17 +129,34 @@ def _norm_region(v: str) -> str:
 
 def _coerce_numbers(slots: Dict) -> Dict:
     """
-    GPT 응답에 섞여 들어온 문자열 값을 안전한 숫자/정규화 값으로 강제.
+    GPT 응답 값 안전 정규화 + 날짜/예산/지역/납기/수령방식 보강.
     """
     out = dict(slots or {})
     if 'quantity' in out:
         out['quantity'] = _to_int(out['quantity'], 1)
+
+    # 희망 날짜 → due_days 계산 + 표시용 저장
+    if out.get('due_date'):
+        dt = _parse_due_date(out.get('due_date'))
+        if dt:
+            days = max(1, (dt - _def_tz_now().date()).days)
+            out['due_days'] = days
+            out['desired_due_date'] = dt.strftime("%Y-%m-%d")
+        else:
+            out.pop('due_date', None)
+
     if 'due_days' in out:
         out['due_days'] = _to_int(out['due_days'], 3)
+
     if 'budget' in out:
         out['budget'] = _to_money(out['budget'], 0)
+
     if 'region' in out:
         out['region'] = _norm_region(out['region'])
+
+    if 'delivery_method' in out:
+        out['delivery_method'] = _norm_delivery_method(out['delivery_method'])
+
     return out
 
 def _sanitize_plain(text: str) -> str:
@@ -254,24 +324,26 @@ class PrintShopAIService:
         return self._get_question_for_slot(flow[0]) if flow else "어떤 정보가 필요하신가요?"
     
     def _get_question_for_slot(self, slot: str) -> str:
-        """슬롯별 질문 생성 (DB 정보 포함)"""
+        '''슬롯별 질문 생성 (DB 정보 포함 + 설명/추천 힌트)'''
+        base_hint = "잘 모르시면 '설명'이나 '추천'이라고 말씀해 주세요."
         questions = {
-            'quantity': '수량은 얼마나 하실 건가요?', # 수량은 자유 입력이므로 바로 질문(DB 조회 불필요)
-            'paper': self._get_paper_question(),
-            'size': self._get_size_question(),
-            'printing': '인쇄 방식은 어떻게 하시겠어요? (단면, 양면)', # 인쇄 방식은 단면,양면 두 가지만 존재하므로 바로 질문
-            'finishing': self._get_finishing_question(),
-            'coating': self._get_coating_question(),
-            'type': self._get_type_question(),
-            'stand': self._get_stand_question(),
-            'processing': self._get_processing_question(),
-            'folding': self._get_folding_question(),
-            'due_days': '납기는 며칠 후까지 필요하세요? (예: 1~7일, 기본 3일)',
-            'region':   '수령/배송 지역은 어디인가요? (예: 서울-중구 / 없으면 “없음”)',
-            'budget':   '예산이 있으시면 알려주세요. (예: 15만원 / 없으면 “없음”)'
+            'quantity': f'수량은 얼마나 하실 건가요? {base_hint}',
+            'paper': (self._get_paper_question() + f' {base_hint}').strip(),
+            'size': (self._get_size_question() + f' {base_hint}').strip(),
+            'printing': f'인쇄 방식은 어떻게 하시겠어요? (단면, 양면) {base_hint}',
+            'finishing': (self._get_finishing_question() + f' {base_hint}').strip(),
+            'coating': (self._get_coating_question() + f' {base_hint}').strip(),
+            'type': (self._get_type_question() + f' {base_hint}').strip(),
+            'stand': (self._get_stand_question() + f' {base_hint}').strip(),
+            'processing': (self._get_processing_question() + f' {base_hint}').strip(),
+            'folding': (self._get_folding_question() + f' {base_hint}').strip(),
+            'delivery_method': "수령 방식은 어떻게 하시겠어요? (방문 수령, 택배, 퀵/당일, 차량 배송)",
+            'due_days': "납기는 며칠 뒤가 좋을까요? 날짜로 말씀하셔도 돼요. (예: 8월 25일)",
+            'region':   "수령/배송 지역은 어디인가요? (예: 서울-중구 / 없으면 '없음')",
+            'budget':   "예산이 있으시면 알려주세요. (예: 15만원 / 없으면 '없음')"
         }
-        
         return questions.get(slot, f'{slot}에 대해 알려주세요.')
+
     
     # 각 슬롯별 질문 생성 함수(DB 정보 조회 후 질문 생성)
     def _get_paper_question(self) -> str:
@@ -296,19 +368,14 @@ class PrintShopAIService:
             return "사이즈는 어떻게 하시겠어요? (90×54mm, 85×54mm, 90×50mm, 85×50mm 등 - 원하시는 사이즈 말씀해주세요)"
         elif self.category == "포스터":
             return "사이즈는 어떻게 하시겠어요? (A4, A3, A2, A1, A0, B4, B3, B2, B1 등 - 원하시는 사이즈 말씀해주세요)"
-        
-        # 다른 카테고리는 기존 로직 유지
+        elif self.category == "스티커":
+            return "사이즈는 어떻게 하시겠어요? 원형은 'Ø직경mm'로 자유 입력 가능합니다. (예: Ø25mm, Ø30mm)"
+    
+        # 나머지는 DB 추출 유지
         sizes = self._extract_sizes_from_db()
         if sizes:
-            # 가격 정보 제거하고 옵션명만 표시
-            clean_sizes = []
-            for size in sizes:
-                # 가격 정보가 포함된 경우 제거
-                if '(' in size and '원' in size:
-                    clean_sizes.append(size.split('(')[0].strip())
-                else:
-                    clean_sizes.append(size)
-            return f"사이즈는 어떻게 하시겠어요? ({', '.join(clean_sizes)})"
+            clean = [s.split('(')[0].strip() if '(' in s and '원' in s else s for s in sizes]
+            return f"사이즈는 어떻게 하시겠어요? ({', '.join(clean)})"
         return "사이즈는 어떻게 하시겠어요?"
     
     def _get_finishing_question(self) -> str:
@@ -836,7 +903,7 @@ DB 정보와 대화 맥락을 바탕으로 자연스럽게 대화하고, 추천 
 추천 인쇄소 TOP3:
 ------------------------------
 1위. ABC인쇄소
-   추천 점수: 85.2점
+   원큐스코어: 85점
    추천 이유: 가격 35 / 납기 28 / 작업 22
    연락처: 02-1234-5678
    단가: 150,000원
@@ -846,7 +913,7 @@ DB 정보와 대화 맥락을 바탕으로 자연스럽게 대화하고, 추천 
    인증된 인쇄소
 
 2위. DEF인쇄소
-   추천 점수: 82.1점
+   원큐스코어: 85점
    추천 이유: 가격 32 / 납기 30 / 작업 20
    연락처: 02-2345-6789
    단가: 160,000원
@@ -855,7 +922,7 @@ DB 정보와 대화 맥락을 바탕으로 자연스럽게 대화하고, 추천 
    배송: 직접수령 가능
 
 3위. GHI인쇄소
-   추천 점수: 78.5점
+   원큐 스코어: 78점
    추천 이유: 가격 30 / 납기 25 / 작업 23
    연락처: 02-3456-7890
    단가: 140,000원
@@ -894,6 +961,29 @@ JSON 형태로 응답해주세요:
 """
         return prompt
     
+    def _required_before_quote(self, slots: Dict) -> List[str]:
+        """
+        카테고리별 필수 슬롯 + 공통(수령방식, 납기, 지역, 예산)
+        납기는 due_days 또는 desired_due_date 둘 중 하나면 OK
+        """
+        per_cat = {
+            '명함': ['quantity', 'size', 'paper', 'printing', 'finishing'],
+            '배너': ['size', 'quantity', 'stand'],
+            '포스터': ['paper', 'size', 'quantity', 'coating'],
+            '스티커': ['type', 'size', 'quantity'],
+            '현수막': ['size', 'quantity', 'processing'],
+            '브로슈어': ['paper', 'folding', 'size', 'quantity']
+        }
+        req = per_cat.get(self.category, []) + ['delivery_method', 'region', 'budget']
+        missing = [k for k in req if not slots.get(k)]
+
+        # 납기: due_days or desired_due_date
+        if not slots.get('due_days') and not slots.get('desired_due_date'):
+            missing.append('due_days')
+
+        return missing
+
+
     def _process_gpt_response(self, response: Dict, current_slots: Dict) -> Dict:
         """GPT 응답 처리"""
         try:
@@ -931,6 +1021,16 @@ JSON 형태로 응답해주세요:
             
             # 견적 완료 시 견적 리포트 생성
             if response.get('action') == 'quote':
+                need = self._required_before_quote(current_slots)
+                if need:
+                    # 아직 부족 → quote 막고 다음 질문
+                    nxt = need[0]
+                    response['action'] = 'ask'
+                    response['message'] = f"아직 필요한 정보가 있어요: {', '.join(need)}. {self._get_question_for_slot(nxt)}"
+                    response.pop('quote_data', None)
+                    response.pop('final_quote', None)
+                    return response
+                
                 print("견적 완료 - 견적 리포트 생성 시작")
                 try:
                     quote_result = self.calculate_quote(current_slots)
@@ -1013,9 +1113,11 @@ JSON 형태로 응답해주세요:
             # TOP3: 기존 키 사용(recommendation_score/_reason)
             top3 = []
             for r in ranked["items"]:
+
                 score = r['scores']['oneq_total']
-                pr, du, wk = r['scores']['price'], r['scores']['due'], r['scores']['work']
-                reason = f"가격 {pr:.0f} / 납기 {du:.0f} / 작업 {wk:.0f}"
+                pr, du, wk = r['scores']['price_40'], r['scores']['due_30'], r['scores']['work_30']
+                reason = f"가격 {pr} / 납기 {du} / 작업 {wk}"
+                
                 top3.append({
                     'printshop_name': r['shop_name'],
                     'printshop_phone': r['phone'],
@@ -1043,62 +1145,95 @@ JSON 형태로 응답해주세요:
 
     
     def _format_final_quote(self, quote_result: Dict) -> str:
-        """최종 견적 리포트 포맷팅"""
+        """최종 견적 리포트 포맷팅(가독성 개선 + 중복 단위 방지 + 카운트 라인 제거)"""
         if 'error' in quote_result:
             return f"죄송합니다. {quote_result['error']}"
-        
-        response = f"{self.category} 최종 견적 리포트\n"
-        response += "=" * 50 + "\n\n"
-        
-        # 수집된 정보 요약
+
+        def _fmt_qty(v):
+            try:
+                n = int(v)
+                return f"{n:,}부"
+            except:
+                s = str(v)
+                return s if '부' in s else f"{s}부"
+
+        def _fmt_days(v):
+            try:
+                n = int(v)
+                return f"{n}일"
+            except:
+                s = str(v)
+                return s if '일' in s else f"{s}일"
+
         slots = quote_result['slots']
-        response += "주문 정보:\n"
-        slot_names = {
-            'quantity': '수량',
-            'paper': '용지',
-            'size': '사이즈',
-            'printing': '인쇄 방식',
-            'finishing': '후가공',
-            'coating': '코팅',
-            'type': '종류',
-            'stand': '거치대',
-            'processing': '가공',
-            'folding': '접지'
-        }
-        
-        for key, value in slots.items():
-            if value and key in slot_names:
-                response += f"• {slot_names[key]}: {value}\n"
-        
-        response += f"\n견적 현황:\n"
-        response += f"• 총 {quote_result.get('total_available', 0)}개 인쇄소에서 견적 가능\n"
-        response += f"• 가격대: {self._get_price_range(quote_result['quotes'])}\n\n"
-        
-        response += "추천 인쇄소 TOP3:\n"
-        response += "-" * 30 + "\n"
-        
-        # TOP3 추천
-        top3_recommendations = quote_result.get('top3_recommendations', [])
-        for i, quote in enumerate(top3_recommendations, 1):
-            response += f"{i}위. {quote['printshop_name']}\n"
-            response += f"   추천 점수: {quote.get('recommendation_score', 0):.1f}점\n"
-            response += f"   추천 이유: {quote.get('recommendation_reason', '안정적인 서비스')}\n"
-            response += f"   연락처: {quote['printshop_phone']}\n"
-            response += f"   단가: {quote['base_price']:,}원\n"
-            response += f"   총액: {quote['total_price']:,}원\n"
-            response += f"   제작기간: {quote['production_time']}\n"
-            response += f"   배송: {quote['delivery_options']}\n"
-            if quote.get('is_verified', False):
-                response += f"   인증된 인쇄소\n"
-            response += "\n"
-        
-        response += "다음 단계:\n"
-        response += "• 추천 인쇄소에 직접 연락하여 주문 진행\n"
-        response += "• 디자인 파일 준비: AI, PSD, PDF, JPG 등 원본 파일과 함께 견적서를 가져가시면 됩니다\n"
-        response += "• 추가 문의사항이 있으시면 언제든 말씀해주세요!\n"
-        response += "• 다른 옵션으로 견적을 다시 받고 싶으시면 '다시 견적받기'라고 말씀해주세요."
-        
-        return response
+        cat = self.category
+        due_display = slots.get('desired_due_date') or _fmt_days(slots.get('due_days', '미정'))
+        budget_val = slots.get('budget')
+        budget_display = "없음" if not budget_val else f"{int(budget_val):,}원"
+
+        header = [
+            f"{cat} 최종 견적",
+            "═" * 50,
+            ""
+        ]
+
+        order = [
+            "견적번호 : " + f"ONEQ-{datetime.now().strftime('%Y-%m%d-%H%M')}",
+            "생성일   : " + datetime.now().strftime('%Y년 %m월 %d일'),
+            ""
+        ]
+
+        info = ["[주문 정보]"]
+        if slots.get('quantity') is not None: info.append(f"• 수량     : {_fmt_qty(slots.get('quantity'))}")
+        if slots.get('size'):                 info.append(f"• 사이즈   : {slots.get('size')}")
+        if slots.get('paper'):                info.append(f"• 용지     : {slots.get('paper')}")
+        if slots.get('printing'):             info.append(f"• 인쇄     : {slots.get('printing')}")
+        if slots.get('finishing'):            info.append(f"• 후가공   : {slots.get('finishing')}")
+        if slots.get('coating'):              info.append(f"• 코팅     : {slots.get('coating')}")
+        if slots.get('type'):                 info.append(f"• 종류     : {slots.get('type')}")
+        if slots.get('stand'):                info.append(f"• 거치대   : {slots.get('stand')}")
+        if slots.get('processing'):           info.append(f"• 가공     : {slots.get('processing')}")
+        if slots.get('folding'):              info.append(f"• 접지     : {slots.get('folding')}")
+
+        if slots.get('delivery_method'):      info.append(f"• 수령방식 : {slots.get('delivery_method')}")
+        info.append(f"• 납기     : {due_display}")
+        info.append(f"• 예산     : {budget_display}")
+        info.append(f"• 지역     : {slots.get('region','없음')}")
+
+        # 가격대
+        price_band = self._get_price_range(quote_result.get('quotes', []))
+
+        summary = [
+            "",
+            "[요약]",
+            f"• 가격대   : {price_band}",
+            ""
+        ]
+
+        # TOP3
+        top3_lines = ["[추천 인쇄소 TOP3]"]
+        for i, q in enumerate(quote_result.get('top3_recommendations', []), 1):
+            top3_lines += [
+                f"{i}위. {q['printshop_name']}" + (" (인증)" if q.get('is_verified') else ""),
+                f"   원큐스코어 : {int(round(q.get('recommendation_score', 0)))}점",
+                f"   이유       : {q.get('recommendation_reason', '안정적인 서비스')}",
+                f"   연락처     : {q['printshop_phone']}",
+                f"   총액       : {q['total_price']:,}원",
+                f"   단가       : {q['base_price']:,}원",
+                f"   제작기간   : {q['production_time']}",
+                f"   배송       : {q['delivery_options']}",
+                ""
+            ]
+
+        footer = [
+            "다음 단계",
+            "• 추천 인쇄소에 직접 연락하여 주문 진행",
+            "• 디자인 파일 준비: AI, PSD, PDF, JPG 등 원본 파일과 함께 견적서를 가져가시면 됩니다",
+            "• 다른 옵션으로 다시 견적받고 싶으시면 '다시 견적'이라고 말씀해 주세요.",
+        ]
+
+        return "\n".join(header + order + info + summary + top3_lines + footer)
+
     
     def _get_price_range(self, quotes: List[Dict]) -> str:
         """가격대 범위 계산"""
@@ -1116,18 +1251,27 @@ JSON 형태로 응답해주세요:
     
     def _create_order_summary(self, slots: Dict) -> Dict:
         """주문 요약 정보 생성 (프론트엔드용)"""
+
+        def _qty(v):
+            try: n=int(v); return f"{n:,}부"
+            except: s=str(v); return s if '부' in s else f"{s}부"
+        def _days(v):
+            try: n=int(v); return f"{n}일"
+            except: s=str(v); return s if '일' in s else f"{s}일"
+
         summary = {
-            'print_type': f"{slots.get('category', '')}",
-            'size': slots.get('size', ''),
-            'quantity': f"{slots.get('quantity', 0)}부",
-            'paper': slots.get('paper', ''),
-            'finishing': slots.get('finishing', ''),
-            'coating': slots.get('coating', ''),
-            'printing': slots.get('printing', ''),
-            'due_days': f"{slots.get('due_days', 0)}일",
-            'budget': f"{slots.get('budget', 0):,}원" if slots.get('budget') and str(slots.get('budget')).replace(',', '').isdigit() else str(slots.get('budget', '없음')),
-            'region': slots.get('region', '없음')
-        }
+            'print_type': f"{slots.get('category','')}",
+            'size': slots.get('size',''),
+            'quantity': _qty(slots.get('quantity',0)),
+            'paper': slots.get('paper',''),
+            'finishing': slots.get('finishing',''),
+            'coating': slots.get('coating',''),
+            'printing': slots.get('printing',''),
+            'due_days': slots.get('desired_due_date') or _days(slots.get('due_days',0)),
+            'budget': "없음" if not slots.get('budget') else f"{int(slots['budget']):,}원",
+            'region': slots.get('region','없음'),
+            'delivery_method': slots.get('delivery_method','')
+    }
         
         # 카테고리별 특화 정보 추가
         if slots.get('category') == '명함':
@@ -1226,8 +1370,8 @@ def format_shop_recommendation(shop: Dict) -> str:
 💵 총액: {shop.get('total_price', 0):,}원
 ⏰ 제작기간: {shop.get('production_time', '문의')}
 🚚 배송: {shop.get('delivery_options', '문의')}
-⭐ 추천점수: {shop.get('recommendation_score', 0):.1f}점
-💡 추천이유: {shop.get('recommendation_reason', '안정적인 서비스')}"""
+⭐ 원큐스코어: {int(round(shop.get('recommendation_score', 0)))}점
+💡 이유: {shop.get('recommendation_reason', '안정적인 서비스')}"""
     except Exception as e:
         print(f"인쇄소 포맷팅 오류: {e}")
         return "인쇄소 정보를 불러올 수 없습니다."

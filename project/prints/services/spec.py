@@ -6,16 +6,18 @@ from . import dummy_data
 
 # 아이템별 필수 슬롯 정의
 REQUIRED_SLOTS = {
-    "BUSINESS_CARD": ["item_type", "quantity", "size", "material", "finishing", "color_mode", "due_days", "region"],
-    "STICKER": ["item_type", "quantity", "size", "material", "shape", "lamination", "due_days", "region"],
-    "BANNER": ["item_type", "size", "material", "grommet", "due_days", "region"],
-    "SIGN": ["item_type", "size", "material", "finishing", "due_days", "region"]
+    "BUSINESS_CARD": ["item_type","quantity","size","material","finishing","color_mode","delivery_method","region","budget","due_days"],  # due_days OR due_date
+    "STICKER":       ["item_type","quantity","size","material","shape","lamination","delivery_method","region","budget","due_days"],
+    "BANNER":        ["item_type","size","material","grommet","delivery_method","region","budget","due_days"],
+    "SIGN":          ["item_type","size","material","finishing","delivery_method","region","budget","due_days"]
 }
 
 # 슬롯별 선택지 (인쇄소 데이터 기반)
 def get_choices_for_slot(slot_name: str, item_type: str = "BUSINESS_CARD") -> List:
     """슬롯별 선택지 반환 (인쇄소 데이터 기반)"""
-    
+    if slot_name == "delivery_method":
+        return ["방문 수령(픽업)", "택배 배송", "퀵/당일 배송", "차량 배송"]
+
     if slot_name == "quantity":
         return [100, 200, 500, 1000, "직접 입력"]
     
@@ -532,31 +534,31 @@ def merge_and_normalize(slots: Dict, new_vals: Dict) -> Dict:
     return out
 
 def find_missing(slots: Dict) -> List[str]:
-    """누락된 슬롯 찾기"""
     item_type = slots.get("item_type") or "BUSINESS_CARD"
     req = REQUIRED_SLOTS.get(item_type, REQUIRED_SLOTS["BUSINESS_CARD"])
-    return [k for k in req if not slots.get(k)]
+    missing = [k for k in req if not slots.get(k)]
+    # 납기 OR 처리
+    if "due_days" in missing and slots.get("due_date"):
+        missing.remove("due_days")
+    return missing
+
 
 def validate(slots: Dict) -> Tuple[bool, Dict[str, str]]:
-    """슬롯 검증"""
     errors = {}
     missing = find_missing(slots)
     if missing:
         errors["_missing"] = ", ".join(missing)
-    
     q = slots.get("quantity")
     if q is not None and (q <= 0 or q > 1_000_000):
         errors["quantity"] = "수량 범위를 확인해주세요 (1 ~ 1,000,000)"
-    
     size = slots.get("size")
-    if size and not re.match(r"^\d{2,4}x\d{2,4}mm$", size):
-        errors["size"] = "사이즈 형식을 '90x50mm'처럼 입력해주세요"
-    
-    due = slots.get("due_days")
-    if due is not None and (due <= 0 or due > 30):
-        errors["due_days"] = "납기는 1~30일 사이로 설정해주세요"
-    
+    if size and not re.match(r"^(\d{2,4}x\d{2,4}mm|[Øøo]?\s*\d{2,4}mm|A[0-5]|B[3-5])$", size, re.IGNORECASE):
+        errors["size"] = "사이즈 형식을 '90x50mm' 또는 'Ø25mm'처럼 입력해주세요"
+    # 납기 OR 검사
+    if not slots.get("due_days") and not slots.get("due_date"):
+        errors["due_days"] = "납기는 '며칠' 또는 '원하는 날짜'로 알려주세요 (예: 3일, 8월 25일)"
     return (len(errors) == 0), errors
+
 
 def next_question(slots: Dict) -> Dict:
     """다음 질문 결정"""
@@ -572,31 +574,34 @@ def next_question(slots: Dict) -> Dict:
         slots["item_type"] = "BUSINESS_CARD"
     
     # 질문 순서 정의
-    order = ["quantity", "size", "material", "finishing", "color_mode", "shape", "lamination", "grommet", "due_days", "region"]
+    order = ["quantity","size","material","finishing","color_mode","shape","lamination","grommet",
+            "delivery_method","due_days","region","budget"]
     target = next((k for k in order if k in missing), missing[0] if missing else "quantity")
-    
-    # 질문 매핑 (용어사전에 있는 용어들만 예시로 사용)
+
     qmap = {
-        "quantity": "몇 부 필요하신가요? (예: 100부, 200부, 500부, 1000부)",
-        "size": "사이즈는 어떻게 하시겠어요? (예: 90x50mm, 86x54mm, A4, A3, A1, A0)",
-        "material": "재질은 무엇으로 할까요? (예: 아트지, 스노우지, 반누보 186g, 휘라레 216g, 스타드림쿼츠 240g, 키칼라아이스골드 230g, 벨벳 300g, PP 250gsm, PET 250gsm, 반투명 PP, 메탈 PP, 배너천, 타프린, 메쉬천, 실크천, PVC)",
-        "finishing": "마감(코팅)은 무엇으로 할까요? (예: 무광, 유광, 스팟 UV, 에폭시, UV 코팅, 매트 코팅)",
-        "color_mode": "인쇄 색상은 어떻게 할까요? (예: 단면 컬러, 양면 컬러, 단면 흑백)",
-        "shape": "스티커 모양은 어떻게 할까요? (예: 사각, 원형, 자유형(도무송))",
-        "lamination": "라미네이팅(필름)은 적용할까요? (예: 무광 라미, 유광 라미)",
-        "grommet": "배너 고리(아일렛)는 어디에 뚫을까요? (예: 모서리 4개, 상단 2개)",
-        "due_days": "납기는 며칠 후면 좋을까요? (예: 1일, 2일, 3일, 5일, 7일)",
-        "region": "지역은 어디로 설정할까요? (예: 서울-중구, 서울-종로, 경기-성남)"
+        "quantity": "몇 부 필요하신가요? (예: 100부, 200부, 500부, 1000부) 잘 모르시면 '추천'이라고 말씀해 주세요.",
+        "size": "사이즈는 어떻게 하시겠어요? (예: 90x50mm, 86x54mm, A4, A3, A1, A0 / 원형 스티커는 Ø25mm처럼 입력 가능)",
+        "material": "재질은 무엇으로 할까요? (예: 아트지, 스노우지, 반누보 186g …) 잘 모르시면 '설명'이나 '추천'이라고 말씀해 주세요.",
+        "finishing": "마감(코팅)은 무엇으로 할까요? (예: 무광, 유광, 스팟 UV ...) 잘 모르시면 '추천'이라고 말씀해 주세요.",
+        "color_mode": "인쇄 색상은 어떻게 할까요? (단면 컬러, 양면 컬러, 단면 흑백)",
+        "shape": "스티커 모양은 어떻게 할까요? (사각, 원형, 자유형(도무송))",
+        "lamination": "라미네이팅(필름)은 적용할까요? (무광 라미, 유광 라미, 없음)",
+        "grommet": "배너 고리(아일렛)는 어디에 뚫을까요? (모서리 4개, 상단 2개, 없음)",
+        "delivery_method": "수령 방식은 어떻게 하시겠어요? (방문 수령, 택배, 퀵/당일, 차량 배송)",
+        "due_days": "납기는 며칠 뒤가 좋을까요? 날짜로 말씀하셔도 돼요. (예: 8월 25일)",
+        "region": "지역은 어디로 설정할까요? (예: 서울-중구, 서울-종로, 경기-성남)",
+        "budget": "예산은 어느 정도 생각하시나요? (예: 10만원, 15만원 / 없으면 '없음')"
     }
     
     # 선택지 가져오기 (인쇄소별 필터링 고려)
     choices = get_choices_for_slot(target, slots.get("item_type"))
     
     # 특정 인쇄소가 선택된 경우 해당 인쇄소의 옵션만 제공
-    if "shop_id" in slots and slots["shop_id"]:
+    if slots.get("shop_id"):
         shop_choices = get_choices_for_slot_by_shop(target, slots["shop_id"], slots.get("item_type"))
         if shop_choices:
-            choices = shop_choices
+            # 제한 X, 합집합으로 안내 폭 넓게 + 맞춤 입력은 항상 유지
+            choices = sorted(set(list(choices) + list(shop_choices) + ["맞춤 입력"]))
     
     return {
         "question": qmap.get(target, f"{target} 값을 알려주세요"),
