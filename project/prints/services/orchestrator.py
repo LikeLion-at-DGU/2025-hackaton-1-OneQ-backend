@@ -135,6 +135,19 @@ def _handle_explain_action(action_payload: Dict, slots: Dict, user_msg: str) -> 
 def _handle_match_action(action_payload: Dict, slots: Dict) -> Dict:
     """MATCH 액션 처리 - 최종 견적서 생성 및 인쇄소 추천"""
     try:
+        # 필수 슬롯 검증 추가
+        missing = spec.find_missing(slots)
+        if missing:
+            # 누락된 슬롯이 있으면 ASK 액션으로 돌아가기
+            next_q = spec.next_question(slots)
+            return {
+                "type": "ask",
+                "question": f"견적 계산을 위해 다음 정보가 필요합니다: {', '.join(missing)}. {next_q['question']}",
+                "choices": next_q.get("choices", []),
+                "slots": slots,
+                "missing": missing
+            }
+
         # 최종 견적서 생성
         quote_report = ai.generate_quote_report(slots)
         

@@ -402,6 +402,32 @@ def chat_quote(request):
 
     chat_session = get_object_or_404(ChatSession, session_id=session_id)
     
+    # 필수 슬롯 검증 추가
+    from .services import spec
+    missing_slots = spec.find_missing(chat_session.slots)
+    if missing_slots:
+        missing_names = {
+            'quantity': '수량',
+            'paper': '용지',
+            'size': '사이즈',
+            'printing': '인쇄 방식',
+            'finishing': '후가공',
+            'coating': '코팅',
+            'type': '종류',
+            'stand': '거치대',
+            'processing': '가공',
+            'folding': '접지',
+            'due_days': '납기',
+            'region': '지역',
+            'budget': '예산'
+        }
+        missing_list = [missing_names.get(slot, slot) for slot in missing_slots]
+        return Response({
+            'action': 'error',
+            'message': f'견적 생성에 필요한 정보가 부족합니다: {", ".join(missing_list)}',
+            'missing_slots': missing_slots
+        }, status=400)
+    
     # AI 서비스로 견적 생성
     category = chat_session.slots.get('category')
     ai_service = PrintShopAIService(category)

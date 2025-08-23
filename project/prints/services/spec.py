@@ -167,3 +167,39 @@ def render_summary(slots: Dict) -> str:
     if slots.get("budget") is not None:
         lines.append(f"예산: {fmt_money(slots['budget'])}")
     return "\n".join(lines)
+
+def explain_term(term: str) -> Dict:
+    """용어 설명 데이터 반환"""
+    # 간단한 용어 설명 데이터
+    term_data = {
+        "무광": {
+            "description": "빛을 반사하지 않는 코팅 방식으로, 고급스러운 느낌을 줍니다.",
+            "use_cases": "명함, 브로슈어, 고급 인쇄물"
+        },
+        "유광": {
+            "description": "빛을 반사하는 코팅 방식으로, 선명하고 화려한 느낌을 줍니다.",
+            "use_cases": "포스터, 전단지, 홍보물"
+        },
+        "스팟": {
+            "description": "특정 부분만 코팅하여 강조 효과를 주는 방식입니다.",
+            "use_cases": "고급 명함, 특별한 디자인이 필요한 인쇄물"
+        },
+        "엠보싱": {
+            "description": "종이에 볼록한 패턴을 만드는 후가공 방식입니다.",
+            "use_cases": "고급 명함, 초대장, 특별한 인쇄물"
+        },
+        "일반지": {
+            "description": "기본적인 종이로, 경제적이고 실용적입니다.",
+            "use_cases": "일반 명함, 문서, 기본 인쇄물"
+        },
+        "고급지": {
+            "description": "품질이 좋은 종이로, 고급스러운 느낌을 줍니다.",
+            "use_cases": "고급 명함, 브로슈어, 중요한 인쇄물"
+        },
+        "아트지": {
+            "description": "미술용지로, 색상 표현이 뛰어납니다.",
+            "use_cases": "포스터, 아트워크, 고품질 인쇄물"
+        }
+    }
+    
+    return term_data.get(term, {})
