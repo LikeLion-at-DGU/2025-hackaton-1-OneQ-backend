@@ -265,8 +265,8 @@ class PrintShopAIService:
             'processing': self._get_processing_question(),
             'folding': self._get_folding_question(),
             'due_days': '납기는 며칠 후까지 필요하세요? (예: 1~7일, 기본 3일)',
-            'region':   '수령/배송 지역은 어디인가요? (예: 서울-중구 / 없으면 “없음”)',
-            'budget':   '예산이 있으시면 알려주세요. (예: 15만원 / 없으면 “없음”)'
+            'region':   '수령/배송 지역은 어디인가요? (예: 서울-중구 / 없으면 "없음")',
+            'budget':   '예산이 있으시면 알려주세요. (예: 15만원 / 없으면 "없음")'
         }
         
         return questions.get(slot, f'{slot}에 대해 알려주세요.')
@@ -989,6 +989,28 @@ JSON 형태로 응답해주세요:
             slots = dict(slots or {})
             slots.setdefault("category", self.category)
 
+            # 필수 슬롯 검증 추가
+            from . import spec
+            missing_slots = spec.find_missing(slots)
+            if missing_slots:
+                missing_names = {
+                    'quantity': '수량',
+                    'paper': '용지',
+                    'size': '사이즈',
+                    'printing': '인쇄 방식',
+                    'finishing': '후가공',
+                    'coating': '코팅',
+                    'type': '종류',
+                    'stand': '거치대',
+                    'processing': '가공',
+                    'folding': '접지',
+                    'due_days': '납기',
+                    'region': '지역',
+                    'budget': '예산'
+                }
+                missing_list = [missing_names.get(slot, slot) for slot in missing_slots]
+                return {'error': f'견적 계산을 위해 다음 정보가 필요합니다: {", ".join(missing_list)}'}
+
             ranked = score_and_rank(slots, self.printshops)
             if ranked["count"] == 0:
                 return {'error': '조건에 맞는 인쇄소가 없습니다. 정보를 다시 확인해주세요.'}
@@ -1228,6 +1250,29 @@ def generate_quote_report(slots: Dict) -> str:
     """견적 리포트 생성"""
     try:
         category = slots.get('category', '포스터')
+        
+        # 필수 슬롯 검증 추가
+        from . import spec
+        missing_slots = spec.find_missing(slots)
+        if missing_slots:
+            missing_names = {
+                'quantity': '수량',
+                'paper': '용지',
+                'size': '사이즈',
+                'printing': '인쇄 방식',
+                'finishing': '후가공',
+                'coating': '코팅',
+                'type': '종류',
+                'stand': '거치대',
+                'processing': '가공',
+                'folding': '접지',
+                'due_days': '납기',
+                'region': '지역',
+                'budget': '예산'
+            }
+            missing_list = [missing_names.get(slot, slot) for slot in missing_slots]
+            return f"견적 리포트를 생성하기 위해 다음 정보가 필요합니다: {', '.join(missing_list)}"
+        
         ai_service = get_ai_service(category)
         quote_result = ai_service.calculate_quote(slots)
         return ai_service._format_final_quote(quote_result)
@@ -1239,6 +1284,14 @@ def recommend_shops(slots: Dict) -> List[Dict]:
     """인쇄소 추천"""
     try:
         category = slots.get('category', '포스터')
+        
+        # 필수 슬롯 검증 추가
+        from . import spec
+        missing_slots = spec.find_missing(slots)
+        if missing_slots:
+            print(f"인쇄소 추천 실패 - 누락된 슬롯: {missing_slots}")
+            return []
+        
         ai_service = get_ai_service(category)
         quote_result = ai_service.calculate_quote(slots)
         
