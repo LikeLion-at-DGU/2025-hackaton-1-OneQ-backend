@@ -380,3 +380,45 @@ class PrintShopRankAPIView(APIView):
             return Response(result, status=200)
         except Exception as e:
             return Response({"detail": str(e)}, status=400)
+
+@api_view(['POST'])
+def chat_quote(request):
+    """최종 견적 생성/조회"""
+    session_id = request.data.get('session_id')
+    if not session_id:
+        return Response({'detail': 'session_id is required'}, status=400)
+
+    chat_session = get_object_or_404(ChatSession, session_id=session_id)
+    
+    # AI 서비스로 견적 생성
+    category = chat_session.slots.get('category')
+    ai_service = PrintShopAIService(category)
+    
+    # 기존 대화 히스토리를 AI 서비스에 로드
+    for msg in chat_session.history:
+        ai_service.conversation_manager.add_message(msg['role'], msg['content'])
+    
+    # 기존 슬롯 정보를 AI 서비스에 로드
+    ai_service.conversation_manager.current_slots = chat_session.slots.copy()
+    
+    # 견적 생성
+    quote_result = ai_service.calculate_quote(chat_session.slots)
+    
+    # 견적 데이터 구조화
+    final_quote = {
+        'quote_number': f"ONEQ-{datetime.now().strftime('%Y-%m%d-%H%M')}",
+        'created_date': datetime.now().strftime('%Y년 %m월 %d일'),
+        'category': category,
+        'slots': chat_session.slots,
+        'recommendations': quote_result.get('top3_recommendations', []),
+        'total_available': quote_result.get('total_available', 0),
+        'price_range': ai_service._get_price_range(quote_result.get('quotes', [])),
+        'formatted_message': ai_service._format_final_quote(quote_result),
+        'order_summary': ai_service._create_order_summary(chat_session.slots)
+    }
+    
+    return Response({
+        'action': 'quote',
+        'final_quote': final_quote,
+        'message': '모든 정보가 수집되었습니다. 최종 견적을 확인해 주세요.'
+    })

@@ -26,6 +26,7 @@ urlpatterns = [
     path('chat/sessions/', views.chatsession_create, name='chatsession_create'),
     path('chat/sessions/<str:session_id>/send/', views.chatsession_send_message, name='chatsession_send_message'),
     path('chat/sessions/<str:session_id>/history/', views.chatsession_history, name='chatsession_history'),
+    path('chat/quote/', views.chat_quote, name='chat_quote'),
 
     path('printshops/rank', views.PrintShopRankAPIView.as_view(), name='printshop_rank'),
 ]
