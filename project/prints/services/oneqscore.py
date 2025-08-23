@@ -68,22 +68,36 @@ def _to_money(v, default=0):
     return default
 
 def _parse_size_mm(size: str) -> Tuple[Optional[int], Optional[int]]:
-    """'90x50mm', '600×1800mm', 'A4' 등 처리 (A4/A3 등은 대략 mm로 맵핑)"""
+    """'90x50mm', '600×1800mm', 'A4', 'Ø25mm' 등"""
     if not size: return (None, None)
     s = size.lower().replace(" ", "").replace("×", "x")
+    # Ø직경mm
+    m = re.match(r"^[øo]?\s*(\d{2,4})mm$", s)
+    if m:
+        d = int(m.group(1))
+        return d, d  # 원형은 지름 d를 가로/세로로 환산(간편화)
     m = re.match(r"^(\d{2,4})x(\d{2,4})(mm)?$", s)
     if m:
         return int(m.group(1)), int(m.group(2))
-    # 간단 규격 치수(대표값)
     map_mm = {
-        'a0': (841, 1189), 'a1': (594, 841), 'a2': (420, 594),
-        'a3': (297, 420),  'a4': (210, 297), 'a5': (148, 210),
-        'b3': (353, 500),  'b4': (250, 353), 'b5': (176, 250),
+        'a0': (841,1189),'a1':(594,841),'a2':(420,594),
+        'a3': (297,420), 'a4':(210,297),'a5':(148,210),
+        'b3': (353,500), 'b4':(250,353),'b5':(176,250),
     }
-    s2 = s.upper()
+    s2 = s.lower()
     if s2 in map_mm:
         return map_mm[s2]
     return (None, None)
+
+def _shop_price_factor(shop: PrintShop) -> float:
+    """
+    인쇄소별 가격 편차(0.90~1.10). DB 없는 상황에서 동일가 방지용
+    """
+    base = (shop.id or 1)
+    name_sum = sum(ord(c) for c in (shop.name or ""))
+    seed = (base * 131 + name_sum) % 21   # 0~20
+    return 0.90 + (seed / 100.0)          # 0.90~1.10
+
 
 def _area_cm2(w_mm: Optional[int], h_mm: Optional[int]) -> float:
     if not w_mm or not h_mm: return 0.0
@@ -185,11 +199,11 @@ def _estimate_price(shop: PrintShop, category: str, slots: Dict) -> int:
 
     color_mul = pr.get("color_multiplier", 1.0)
     duplex_mul = pr.get("duplex_multiplier", 1.0)
-    is_color = "컬러" in printing or "color" in printing or slots.get("coating")  # 포스터/스티커 등 컬러 기본 가정
+    is_color = "컬러" in printing or "color" in printing or slots.get("coating")
     is_duplex = "양면" in printing
 
     if mode == "area":
-        area = _area_cm2(w, h)
+        area = _area_cm2(w, h) or 1.0  # 0 방지
         base = area * float(pr.get("rate_per_cm2", 0.02))
     else:
         base = float(pr.get("base_unit_price", 300))
@@ -200,8 +214,10 @@ def _estimate_price(shop: PrintShop, category: str, slots: Dict) -> int:
     fin_prices = pr.get("finishing_prices", {})
     base += float(fin_prices.get(finishing, fin_prices.get("NONE", 0)))
 
-    total = int(round(base * q))
-    return max(total, 0)
+    total = base * q * _shop_price_factor(shop)
+
+    return max(1, int(math.ceil(total)))
+
 
 # ---------- 납기 ETA ----------
 def _estimate_eta_hours(shop: PrintShop, category: str, slots: Dict) -> float:
@@ -217,22 +233,29 @@ def _estimate_eta_hours(shop: PrintShop, category: str, slots: Dict) -> float:
     rush = float(lead.get("rush_multiplier", 0.85))
     fin_add = float((lead.get("finishing_add_hours") or {}).get(finishing, 0))
 
-    # 수량에 따른 증가(간단)
     qty_term = (q / 100.0) * per100
-
-    # 대형물(배너/현수막/포스터) 면적에 따른 가중(간단)
     area_term = 0.0
     if category in ("배너", "현수막", "포스터"):
         area = _area_cm2(w, h)
-        area_term = min(24.0, area / 10000.0)  # 면적 10k cm² 당 +1h, 최대 +24h
+        area_term = min(24.0, (area or 0) / 10000.0)
 
     eta = (base + qty_term + area_term + fin_add) * rush
 
-    # 같은 구/동이면(주소에 지역 문자열 포함 시) 물류 여지로 약간 단축
+    # 지역 이점
     if user_region and shop.address and user_region in shop.address.replace(" ", ""):
         eta = max(0.0, eta - 6.0)
 
+    # 수령 방식에 따른 물류시간
+    dm = (slots.get("delivery_method") or "").lower()
+    ship_h = 0.0
+    if "pickup" in dm:   ship_h = 0.0
+    elif "courier" in dm: ship_h = 6.0
+    elif "truck" in dm:   ship_h = 12.0
+    elif "parcel" in dm:  ship_h = 24.0
+    eta += ship_h
+
     return eta
+
 
 def _due_fit(now: datetime, eta_hours: float, due_days: int) -> float:
     """요청 납기(due_days일) 내 가능성으로 0~100점. 범위 처리를 고려하여 완화된 점수."""
@@ -296,7 +319,9 @@ def _work_fit(shop: PrintShop, category: str, slots: Dict) -> float:
 
     # 용지/후가공/사이즈 문자열 매칭(있으면 가점)
     if paper and _contains(paper_src, paper): s += 35
-    if finishing != "NONE" and _contains(fin_src, finishing): s += 25
+    fin_ko = {"MATTE": "무광", "GLOSS": "유광"}.get(finishing, finishing)
+    if finishing != "NONE" and (_contains(fin_src, fin_ko) or _contains(fin_src, finishing)):
+        s += 25
     # 명함과 포스터는 사이즈 매칭 제외 (대부분의 인쇄소가 표준 규격 처리 가능)
     if category not in ["명함", "포스터"] and size and _contains(size_src, size): s += 20
 
@@ -314,25 +339,19 @@ def _price_fit_scores(total_prices: Dict[int, int], budget: Optional[int]) -> Di
     mn, mx = min(vals), max(vals)
     rng = (mx - mn) or 1
     scores: Dict[int, float] = {}
-    
     for pid, price in total_prices.items():
-        # 기본 점수: 싸면 높음
         base = 100.0 * (mx - price) / rng
-        
-        # 예산 범위 처리
         if budget and budget > 0:
             if price > budget:
-                # 예산 초과 시 페널티 (하지만 완전히 제외하지는 않음)
                 over = (price - budget) / float(budget)
-                penalty = min(50.0, over * 100.0)  # 초과율 50%면 50점 감점 (이전보다 완화)
+                penalty = min(50.0, over * 100.0)
                 base = max(0.0, base - penalty)
             else:
-                # 예산 내면 보너스
                 bonus = min(20.0, (budget - price) / float(budget) * 50.0)
                 base = min(100.0, base + bonus)
-        
-        scores[pid] = round(base, 1)
+        scores[pid] = round(min(100.0, max(0.0, base)), 1)  # 0~100 클램프
     return scores
+
 
 # ---------- 메인: 점수 계산 + Top3 ----------
 def score_and_rank(slots: Dict, shops: List[PrintShop]) -> Dict:
@@ -413,16 +432,42 @@ def score_and_rank(slots: Dict, shops: List[PrintShop]) -> Dict:
 
     price_scores = _price_fit_scores(total_prices, budget)
 
-    # 가중합(40/30/30)
+    # 가중합(가격 40 / 납기 30 / 작업 30) + 항목별 점수 캡
     for r in rows:
         sid = r["shop_id"]
-        total = 0.4 * price_scores[sid] + 0.3 * due_scores[sid] + 0.3 * work_scores[sid]
+
+        # 0~100 원점수(소수1자리 보존)
+        p_raw = max(0.0, min(100.0, float(price_scores[sid])))
+        d_raw = max(0.0, min(100.0, float(due_scores[sid])))
+        w_raw = max(0.0, min(100.0, float(work_scores[sid])))
+
+        # 가중 스케일로 변환 후 각 항목 만점에서 캡(반올림 → 정수)
+        p40 = int(round(p_raw * 0.4))  # 0~40
+        d30 = int(round(d_raw * 0.3))  # 0~30
+        w30 = int(round(w_raw * 0.3))  # 0~30
+
+        # 혹시 반올림으로 41/31 되는 것 방지
+        p40 = min(40, max(0, p40))
+        d30 = min(30, max(0, d30))
+        w30 = min(30, max(0, w30))
+
+        oneq_total = p40 + d30 + w30  # 0~100
+
         r["scores"] = {
-            "price": price_scores[sid],
-            "due": due_scores[sid],
-            "work": work_scores[sid],
-            "oneq_total": round(total, 2)
+            # 원점수(0~100)도 남겨둠: 필요시 디버깅/분석 용
+            "price_raw": round(p_raw, 1),
+            "due_raw":   round(d_raw, 1),
+            "work_raw":  round(w_raw, 1),
+
+            # 표시/총점에 쓰는 스케일 점수(캡 적용)
+            "price_40": p40,
+            "due_30":   d30,
+            "work_30":  w30,
+
+            # 최종 원큐스코어(정수)
+            "oneq_total": oneq_total
         }
+
 
     rows_sorted = sorted(rows, key=lambda x: x["scores"]["oneq_total"], reverse=True)
     top3 = rows_sorted[:3]

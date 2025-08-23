@@ -274,8 +274,10 @@ def chatsession_send_message(request, session_id):
     # 기존 슬롯 정보를 AI 서비스에 로드
     ai_service.conversation_manager.current_slots = chat_session.slots.copy()
     
-    ai_response = ai_service.process_user_message(user_message, chat_session.slots)
-    print(f"AI 응답: {ai_response}")
+    try:
+        ai_response = ai_service.process_user_message(user_message, chat_session.slots)
+    except Exception as e:
+        return Response({'error': f'AI 처리 중 오류: {str(e)}'}, status=500)
     
     # 슬롯/히스토리 업데이트 전 최종 메시지 정제
     clean_msg = _sanitize_plain(ai_response.get('message', ''))
@@ -375,8 +377,9 @@ class PrintShopRankAPIView(APIView):
                 is_active=True,
                 registration_status='completed'
             )
-            candidates = [s for s in all_printshops if (request.data.get("category") or "명함") in (s.available_categories or [])]
+            candidates = list(all_printshops)  # 카테고리 필터는 score_and_rank가 수행
             result = score_and_rank(request.data, candidates)
+            
             return Response(result, status=200)
         except Exception as e:
             return Response({"detail": str(e)}, status=400)
@@ -394,6 +397,16 @@ def chat_quote(request):
     category = chat_session.slots.get('category')
     ai_service = PrintShopAIService(category)
     
+    # 필수 정보 수집 여부 확인
+    need = ai_service._required_before_quote(chat_session.slots)
+    if need:
+        nxt = need[0]
+        return Response({
+            'action': 'ask',
+            'message': f"아직 필요한 정보가 있어요: {', '.join(need)}. {ai_service._get_question_for_slot(nxt)}",
+            'slots': chat_session.slots
+        }, status=400)
+
     # 기존 대화 히스토리를 AI 서비스에 로드
     for msg in chat_session.history:
         ai_service.conversation_manager.add_message(msg['role'], msg['content'])
