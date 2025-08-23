@@ -8,6 +8,8 @@ from .gpt_client import GPTClient
 from .db_formatter import DBFormatter
 from .conversation_manager import ConversationManager
 from .oneqscore import score_and_rank
+from . import spec
+
 
 def _to_int(v, default=0):
     if isinstance(v, int): 
@@ -70,9 +72,17 @@ def _to_money(v, default=0):
 def _norm_region(v: str) -> str:
     if not v:
         return ""
-    s = str(v).strip().replace(" ", "")
+    s = str(v).strip()
     s = s.replace("/", "-").replace("_", "-")
-    return s
+    # "서울 중구" → "서울-중구" 식으로 첫 공백만 하이픈으로
+    s = re.sub(r"\s+", " ", s)
+    if " " in s and "-" not in s:
+        parts = s.split(" ")
+        if len(parts) >= 2:
+            s = parts[0] + "-" + parts[1]
+    # 최종적으로 공백 제거
+    return s.replace(" ", "")
+
 
 def _coerce_numbers(slots: Dict) -> Dict:
     """
@@ -237,21 +247,9 @@ class PrintShopAIService:
         return intro
     
     def _get_first_question(self) -> str:
-        """첫 번째 질문 생성"""
-        # 각 카테고리마다 필요한 정보를 수집하는 순서
-        category_flows = {
-            '명함': ['quantity', 'size', 'paper', 'printing', 'finishing'],
-            '배너': ['size', 'quantity', 'stand'],
-            '포스터': ['paper', 'size', 'quantity', 'coating'],
-            '스티커': ['type', 'size', 'quantity'],
-            '현수막': ['size', 'quantity', 'processing'],
-            '브로슈어': ['paper', 'folding', 'size', 'quantity']
-        }
-        
-        # 현재 카테고리의 순서 가져오기
-        common_tail = ['due_days', 'region', 'budget']
-        flow = category_flows.get(self.category, []) + common_tail
-        return self._get_question_for_slot(flow[0]) if flow else "어떤 정보가 필요하신가요?"
+        flow = spec.CATEGORY_SLOT_FLOW.get(self.category, [])
+        return flow[0][1] if flow else "어떤 정보가 필요하신가요?"
+
     
     def _get_question_for_slot(self, slot: str) -> str:
         """슬롯별 질문 생성 (DB 정보 포함)"""
@@ -697,7 +695,7 @@ JSON 형태로 응답해주세요:
             '브로슈어': ['paper', 'folding', 'size', 'quantity']
         }
         common_tail = ['due_days', 'region', 'budget']  
-        required = required_slots.get(self.category, []) + common_tail
+        required = spec.required_slots(self.category)
         missing_slots = self.conversation_manager.get_missing_slots(required)
         
         prompt = f"""
@@ -731,7 +729,7 @@ DB 정보와 대화 맥락을 바탕으로 자연스럽게 대화하고, 추천 
 2. **DB 기반 응답**: 위의 DB 정보만을 바탕으로 정확한 정보 제공
 3. **자연스러운 대화**: 친근하고 자연스러운 톤으로 대화
 4. **맥락 이해**: 이전 대화를 고려하여 적절한 응답
-5. **상태 기억**: 이미 수집된 정보는 다시 묻지 말고 다음 단계로 진행
+5. **상태 기억**: 이미 수집된 정보는 다시 묻지 말고 다음 단계로 진행, 이미 채워진 슬롯은 절대 다시 묻지 말고 다음 미싱 슬롯만 하나씩 진행
 6. **슬롯 업데이트**: 사용자 메시지에서 정보를 추출하여 적절한 슬롯에 저장
 7. **가격 정보 제외**: 질문할 때는 가격 정보를 말하지 말고 옵션명만 제공하세요
  8. **카테고리별 질문 순서**: 반드시 현재 카테고리에 맞는 질문을 해야 합니다
@@ -913,10 +911,12 @@ JSON 형태로 응답해주세요:
             # 슬롯 업데이트
             if 'slots' in response and response['slots']:
                 try:
-                    coerced = _coerce_numbers(response['slots']) # 숫자/금액/지역 정규화
+                    coerced = _coerce_numbers(response['slots'])  # 숫자/금액/지역 정규화
                     current_slots.update(coerced)
                     self.conversation_manager.update_slots(coerced)
-                    print(f"슬롯 업데이트: {coerced}")
+                    # ★ 응답에도 반영하여 뷰에서 세션에 저장될 때 항상 정규화된 값이 쓰이게 함
+                    response['slots'] = coerced
+                    print(f"슬롯 업데이트(정규화): {coerced}")
                 except Exception as e:
                     print(f"슬롯 업데이트 중 오류: {e}")
             
@@ -1044,6 +1044,18 @@ JSON 형태로 응답해주세요:
     
     def _format_final_quote(self, quote_result: Dict) -> str:
         """최종 견적 리포트 포맷팅"""
+
+        # 수집된 정보 요약
+        raw_slots = quote_result['slots'] or {}
+        slots = {
+            **raw_slots,
+            'quantity': _to_int(raw_slots.get('quantity'), 0),
+            'due_days': _to_int(raw_slots.get('due_days'), 0),
+            'budget': _to_money(raw_slots.get('budget'), 0),
+            'region': _norm_region(raw_slots.get('region', ''))
+        }
+
+
         if 'error' in quote_result:
             return f"죄송합니다. {quote_result['error']}"
         
@@ -1051,7 +1063,6 @@ JSON 형태로 응답해주세요:
         response += "=" * 50 + "\n\n"
         
         # 수집된 정보 요약
-        slots = quote_result['slots']
         response += "주문 정보:\n"
         slot_names = {
             'quantity': '수량',
@@ -1116,17 +1127,23 @@ JSON 형태로 응답해주세요:
     
     def _create_order_summary(self, slots: Dict) -> Dict:
         """주문 요약 정보 생성 (프론트엔드용)"""
+
+        q = _to_int(slots.get('quantity'), 0)
+        d = _to_int(slots.get('due_days'), 0)
+        b = _to_money(slots.get('budget'), 0)
+        r = _norm_region(slots.get('region', '없음'))
+
         summary = {
             'print_type': f"{slots.get('category', '')}",
             'size': slots.get('size', ''),
-            'quantity': f"{slots.get('quantity', 0)}부",
+            'quantity': f"{q}부" if q else '',
             'paper': slots.get('paper', ''),
             'finishing': slots.get('finishing', ''),
             'coating': slots.get('coating', ''),
             'printing': slots.get('printing', ''),
-            'due_days': f"{slots.get('due_days', 0)}일",
-            'budget': f"{slots.get('budget', 0):,}원" if slots.get('budget') and str(slots.get('budget')).replace(',', '').isdigit() else str(slots.get('budget', '없음')),
-            'region': slots.get('region', '없음')
+            'due_days': f"{d}일" if d else '',
+            'budget': f"{b:,}원" if b else '없음',
+            'region': r or '없음'
         }
         
         # 카테고리별 특화 정보 추가
@@ -1174,9 +1191,25 @@ def ask_action(history: List[Dict], slots: Dict) -> Dict:
         # AI 서비스로 메시지 처리
         response = ai_service.process_user_message(user_message, slots)
         
+        # 액션 표준화
+        raw = (response.get('action') or '').strip().lower()
+        if raw in ('ask', ''):
+            act = 'ASK'
+        elif raw in ('explain',):
+            act = 'EXPLAIN'
+        elif raw in ('confirm',):
+            act = 'CONFIRM'
+        elif raw in ('quote', 'match'):
+            # 모든 필수 슬롯이 채워졌는지 최종 확인
+            req = spec.required_slots(category)
+            missing = [k for k in req if not (response.get('slots', {}).get(k) or slots.get(k))]
+            act = 'MATCH' if not missing else 'ASK'
+        else:
+            act = 'ASK'
+
         # 응답 형식 통일
         return {
-            'action': response.get('action', 'ASK'),
+            'action': act,
             'message': response.get('message', ''),
             'filled_slots': response.get('slots', {}),
             'question': response.get('next_question', '')

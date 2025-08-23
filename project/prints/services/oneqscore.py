@@ -8,6 +8,11 @@ import re
 
 from ..models import PrintShop
 
+
+def _clip_int(v: float, lo: int = 0, hi: int = 100) -> int:
+    return max(lo, min(hi, int(round(v))))
+
+
 # ---------- 유틸: 슬롯 정규화 ----------
 def _to_int(v, default=0) -> int:
     if v is None: return default
@@ -68,13 +73,24 @@ def _to_money(v, default=0):
     return default
 
 def _parse_size_mm(size: str) -> Tuple[Optional[int], Optional[int]]:
-    """'90x50mm', '600×1800mm', 'A4' 등 처리 (A4/A3 등은 대략 mm로 맵핑)"""
-    if not size: return (None, None)
-    s = size.lower().replace(" ", "").replace("×", "x")
+    """'90x50mm', '600×1800mm', 'A4', '원형 50mm', 'Ø50mm', '지름50mm' 등 처리"""
+    if not size: 
+        return (None, None)
+    s = size.lower().replace(" ", "")
+    s = s.replace("×", "x")
+
+    # 원형(지름) 표기: 원형50mm, 원형50, 지름50mm, Ø50mm
+    m = re.match(r"^(원형|원|지름|ø|diameter)(\d{2,4})(mm)?$", s)
+    if m:
+        d = int(m.group(2))
+        return (d, d)
+
+    # 가로x세로
     m = re.match(r"^(\d{2,4})x(\d{2,4})(mm)?$", s)
     if m:
         return int(m.group(1)), int(m.group(2))
-    # 간단 규격 치수(대표값)
+
+    # A/B 규격
     map_mm = {
         'a0': (841, 1189), 'a1': (594, 841), 'a2': (420, 594),
         'a3': (297, 420),  'a4': (210, 297), 'a5': (148, 210),
@@ -84,6 +100,7 @@ def _parse_size_mm(size: str) -> Tuple[Optional[int], Optional[int]]:
     if s2 in map_mm:
         return map_mm[s2]
     return (None, None)
+
 
 def _area_cm2(w_mm: Optional[int], h_mm: Optional[int]) -> float:
     if not w_mm or not h_mm: return 0.0
@@ -312,82 +329,55 @@ def _work_fit(shop: PrintShop, category: str, slots: Dict) -> float:
 def _price_fit_scores(total_prices: Dict[int, int], budget: Optional[int]) -> Dict[int, float]:
     vals = list(total_prices.values())
     mn, mx = min(vals), max(vals)
-    rng = (mx - mn) or 1
+    rng = mx - mn
+    uniform_prices = (rng == 0)
     scores: Dict[int, float] = {}
-    
+
     for pid, price in total_prices.items():
-        # 기본 점수: 싸면 높음
-        base = 100.0 * (mx - price) / rng
-        
-        # 예산 범위 처리
+        if uniform_prices:
+            # 가격이 모두 동일하면 기본 50점에서 시작
+            base = 50.0
+        else:
+            base = 100.0 * (mx - price) / (rng or 1)
         if budget and budget > 0:
             if price > budget:
-                # 예산 초과 시 페널티 (하지만 완전히 제외하지는 않음)
                 over = (price - budget) / float(budget)
-                penalty = min(50.0, over * 100.0)  # 초과율 50%면 50점 감점 (이전보다 완화)
-                base = max(0.0, base - penalty)
+                base -= min(50.0, over * 100.0)   # 완화 페널티
             else:
-                # 예산 내면 보너스
                 bonus = min(20.0, (budget - price) / float(budget) * 50.0)
-                base = min(100.0, base + bonus)
-        
-        scores[pid] = round(base, 1)
+                base += bonus
+        base = max(0.0, min(100.0, base))  # 0~100 클램프
+        scores[pid] = float(base)  # 일단 float로 저장, 나중에 정수화
     return scores
+
 
 # ---------- 메인: 점수 계산 + Top3 ----------
 def score_and_rank(slots: Dict, shops: List[PrintShop]) -> Dict:
     category = slots.get("category") or slots.get("item_type") or "명함"
-    # ChatSession에는 '명함/배너/포스터...' 한글 카테고리로 저장되는 구조
     due_days = _to_int(slots.get("due_days"), 3)
     budget = _to_int(slots.get("budget"), 0)
 
-    # 카테고리 매핑 (한글 → 영어)
     category_mapping = {
-        '명함': 'card',
-        '배너': 'banner', 
-        '포스터': 'poster',
-        '스티커': 'sticker',
-        '현수막': 'banner2',
-        '브로슈어': 'brochure'
+        "명함": "card",
+        "배너": "banner",
+        "포스터": "poster",
+        "스티커": "sticker",
+        "현수막": "banner2",
+        "브로슈어": "brochure",
     }
-    
-    # 한글 카테고리를 영어로 변환
     english_category = category_mapping.get(category, category)
 
-    # 후보: 해당 카테고리를 지원하는 활성/완료 인쇄소(views/AI서비스와 동일 기준)
-    candidates = []
-    print(f"=== score_and_rank 디버깅 ===")
-    print(f"카테고리: {category} → {english_category}")
-    print(f"전달받은 인쇄소 수: {len(shops)}")
-    
-    for s in shops:
-        try:
-            print(f"인쇄소 확인: {s.name}")
-            print(f"  - is_active: {s.is_active}")
-            print(f"  - registration_status: {s.registration_status}")
-            print(f"  - available_categories: {s.available_categories}")
-            print(f"  - 찾는 카테고리: {english_category}")
-            print(f"  - 포함 여부: {english_category in (s.available_categories or [])}")
-            
-            if s.is_active and s.registration_status == "completed" and english_category in (s.available_categories or []):
-                candidates.append(s)
-                print(f"  ✓ {s.name} 후보 추가됨")
-            else:
-                print(f"  ✗ {s.name} 후보 제외됨")
-        except Exception as e:
-            print(f"  ✗ {s.name} 예외 발생: {e}")
-            continue
-    
-    print(f"=== 최종 후보 인쇄소 수: {len(candidates)} ===")
-    
+    # 후보 인쇄소
+    candidates = [
+        s for s in shops
+        if s.is_active
+        and s.registration_status == "completed"
+        and english_category in (s.available_categories or [])
+    ]
     if not candidates:
         return {"items": [], "count": 0, "all": []}
 
-    # 가격/납기/작업 추정
-    total_prices: Dict[int, int] = {}
-    due_scores: Dict[int, float] = {}
-    work_scores: Dict[int, float] = {}
-
+    total_prices, due_scores, work_scores = {}, {}, {}
     now = datetime.now()
     rows = []
 
@@ -413,22 +403,25 @@ def score_and_rank(slots: Dict, shops: List[PrintShop]) -> Dict:
 
     price_scores = _price_fit_scores(total_prices, budget)
 
-    # 가중합(40/30/30)
+    # === 가중합 (가격 40%, 납기 30%, 작업 적합도 30%) ===
     for r in rows:
         sid = r["shop_id"]
-        total = 0.4 * price_scores[sid] + 0.3 * due_scores[sid] + 0.3 * work_scores[sid]
+        weighted_total = (
+            0.4 * price_scores[sid]
+            + 0.3 * due_scores[sid]
+            + 0.3 * work_scores[sid]
+        )
+        tiebreak = (sid % 7) * 0.07  # 동점 방지
+        weighted_total = max(0.0, min(100.0, weighted_total + tiebreak))
+
         r["scores"] = {
-            "price": price_scores[sid],
-            "due": due_scores[sid],
-            "work": work_scores[sid],
-            "oneq_total": round(total, 2)
+            "price": int(round(price_scores[sid])),
+            "due": int(round(due_scores[sid])),
+            "work": int(round(work_scores[sid])),
+            "oneq_total": int(round(weighted_total)),  # ✅ 정수 점수
         }
 
     rows_sorted = sorted(rows, key=lambda x: x["scores"]["oneq_total"], reverse=True)
     top3 = rows_sorted[:3]
 
-    return {
-        "count": len(top3),
-        "items": top3,
-        "all": rows_sorted
-    }
+    return {"count": len(top3), "items": top3, "all": rows_sorted}

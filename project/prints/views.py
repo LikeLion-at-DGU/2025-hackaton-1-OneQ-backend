@@ -375,6 +375,18 @@ class PrintShopRankAPIView(APIView):
                 is_active=True,
                 registration_status='completed'
             )
+
+            category = request.data.get("category") or "명함"
+            category_mapping = {
+                '명함': 'card', '배너': 'banner', '포스터': 'poster',
+                '스티커': 'sticker', '현수막': 'banner2', '브로슈어': 'brochure'
+            }
+            eng = category_mapping.get(category, category)
+
+            def _has_cat(shop):
+                cats = (shop.available_categories or [])
+                return (eng in cats) or (category in cats)
+
             candidates = [s for s in all_printshops if (request.data.get("category") or "명함") in (s.available_categories or [])]
             result = score_and_rank(request.data, candidates)
             return Response(result, status=200)
