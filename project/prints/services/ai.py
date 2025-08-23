@@ -1125,7 +1125,7 @@ JSON 형태로 응답해주세요:
             'coating': slots.get('coating', ''),
             'printing': slots.get('printing', ''),
             'due_days': f"{slots.get('due_days', 0)}일",
-            'budget': f"{slots.get('budget', 0):,}원" if slots.get('budget') else "없음",
+            'budget': f"{slots.get('budget', 0):,}원" if slots.get('budget') and str(slots.get('budget')).replace(',', '').isdigit() else str(slots.get('budget', '없음')),
             'region': slots.get('region', '없음')
         }
         
