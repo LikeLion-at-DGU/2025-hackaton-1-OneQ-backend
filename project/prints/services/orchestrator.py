@@ -39,35 +39,40 @@ def handle_message(history: List[Dict], slots: Dict, user_msg: str) -> Dict:
 
 def _handle_ask_action(action_payload: Dict, slots: Dict, user_msg: str) -> Dict:
     """ASK 액션 처리"""
-    # 수정 요청인지 확인
     modification_request = _check_modification_request(user_msg)
     if modification_request:
-        # 해당 슬롯 초기화
         slots[modification_request] = None
         print(f"DEBUG: 수정 요청 감지 - {modification_request} 슬롯 초기화")
-    
-    # 사용자 입력을 슬롯에 병합
+
     filled_slots = action_payload.get("filled_slots", {})
     filled_slots["_user_text"] = user_msg
     slots = spec.merge_and_normalize(slots or {}, filled_slots)
-    
-    # 누락된 슬롯 확인
+
+    # 누락 체크 및 '다음 질문' 계산 (GPT 질문은 무시)
     missing = spec.find_missing(slots)
-    
-    # 다음 질문 결정
     next_q = spec.next_question(slots)
-    question = action_payload.get("question") or next_q["question"]
+    question = next_q["question"]
     choices = next_q.get("choices", [])
-    
+
+    # 화면에는 '질문'만 보냄. (상태문구 제거)
+    if missing:
+        message = question
+    else:
+        message = "모든 정보가 준비되었습니다. 견적을 생성할까요?"
+
     print(f"DEBUG: ASK - missing={missing}, question={question}")
-    
+
     return {
         "type": "ask",
+        "message": message,
         "question": question,
         "choices": choices,
         "slots": slots,
-        "missing": missing
+        "missing": missing,
+        # 필요하면 프론트에서 미니 요약을 사용하도록 별도 필드로만 전달(노출은 프론트가 결정)
+        "summary": spec.render_summary(slots),
     }
+
 
 def _check_modification_request(user_msg: str) -> str:
     """수정 요청 감지 및 해당 슬롯 반환"""
