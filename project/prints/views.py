@@ -395,6 +395,18 @@ def chatsession_send_message(request, session_id):
         'timestamp': datetime.now().isoformat()
     })
     
+    # 로딩 메시지가 포함된 응답인지 확인
+    if "최종 견적서 산출 시 시간이 소요될 수 있습니다" in clean_msg:
+        # 로딩 메시지가 포함된 경우 프론트엔드에 신호 전달
+        chat_session.save()
+        serializer = ChatSessionSerializer(chat_session)
+        response_data = serializer.data
+        response_data.update({
+            'is_loading_quote': True,
+            'loading_message': "감사합니다! 최종 견적서 산출 시 시간이 소요될 수 있습니다. 산출까지 잠시만 기다려주세요! ⏳"
+        })
+        return Response(response_data)
+    
     # 최종 견적서가 생성되었는지 확인하고 인쇄소 추천 추가
     is_final_quote = False
     quote_info = None
