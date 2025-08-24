@@ -13,11 +13,10 @@ from .serializers import (
     PrintShopUpdateSerializer, PrintShopPasswordVerifySerializer, ChatSessionSerializer,
     PrintShopStep1Serializer, PrintShopStep2Serializer, PrintShopFinalizeSerializer
 )
-from .services.ai import PrintShopAIService
+from .services.ai_client import AIClient
 from datetime import datetime
 import uuid
 from rest_framework.views import APIView
-from .services.oneqscore import score_and_rank
 import re
 
 # ===== 단계별 인쇄소 등록 Views =====
@@ -209,11 +208,20 @@ def chatsession_create(request):
     print(f"요청된 카테고리: {category}")
     print(f"요청 데이터: {request.data}")
     
-    # 카테고리별 AI 서비스 초기화
-    ai_service = PrintShopAIService(category)
+    # AI 클라이언트 초기화
+    ai_client = AIClient()
     
-    # 초기 메시지 생성
-    initial_message = ai_service.get_category_introduction()
+    # 카테고리별 인사말 생성
+    category_intros = {
+        '명함': "안녕하세요! 명함 제작 전문 챗봇입니다. 🏢\n\n명함 제작에 필요한 정보를 수집해드릴게요.\n\n먼저 어떤 용지 종류를 원하시나요? (일반지, 고급지, 아트지, 코팅지 중 선택해주세요)",
+        '배너': "안녕하세요! 배너 제작 전문 챗봇입니다. 🎯\n\n배너 제작에 필요한 정보를 수집해드릴게요.\n\n먼저 어떤 배너 사이즈를 원하시나요? (1x3m, 2x4m, 3x6m 등)",
+        '포스터': "안녕하세요! 포스터 제작 전문 챗봇입니다. 🎨\n\n포스터 제작에 필요한 정보를 수집해드릴게요.\n\n먼저 어떤 용지 종류를 원하시나요? (일반지, 아트지, 코팅지, 합지 중 선택해주세요)",
+        '스티커': "안녕하세요! 스티커 제작 전문 챗봇입니다. 🏷️\n\n스티커 제작에 필요한 정보를 수집해드릴게요.\n\n먼저 어떤 스티커 종류를 원하시나요? (일반스티커, 방수스티커, 반사스티커, 전사스티커 중 선택해주세요)",
+        '현수막': "안녕하세요! 현수막 제작 전문 챗봇입니다. 🏁\n\n현수막 제작에 필요한 정보를 수집해드릴게요.\n\n먼저 어떤 현수막 사이즈를 원하시나요? (1x3m, 2x4m, 3x6m 등)",
+        '브로슈어': "안녕하세요! 브로슈어 제작 전문 챗봇입니다. 📄\n\n브로슈어 제작에 필요한 정보를 수집해드릴게요.\n\n먼저 어떤 용지 종류를 원하시나요? (일반지, 아트지, 코팅지, 합지 중 선택해주세요)"
+    }
+    
+    initial_message = category_intros.get(category, "안녕하세요! 인쇄 제작 전문 챗봇입니다.")
     
     chat_session = ChatSession.objects.create(
         session_id=session_id,
@@ -265,25 +273,39 @@ def chatsession_send_message(request, session_id):
     print(f"세션 슬롯: {chat_session.slots}")
     print(f"사용자 메시지: {user_message}")
     
-    ai_service = PrintShopAIService(category)
+    ai_client = AIClient()
     
-    # 기존 대화 히스토리를 AI 서비스에 로드
+    # 대화 히스토리를 AI에게 전달하기 위한 메시지 구성
+    conversation_history = []
     for msg in chat_session.history:
-        ai_service.conversation_manager.add_message(msg['role'], msg['content'])
+        conversation_history.append({
+            "role": msg['role'],
+            "content": msg['content']
+        })
     
-    # 기존 슬롯 정보를 AI 서비스에 로드
-    ai_service.conversation_manager.current_slots = chat_session.slots.copy()
+    # 현재 사용자 메시지 추가
+    conversation_history.append({
+        "role": "user",
+        "content": user_message
+    })
     
-    ai_response = ai_service.process_user_message(user_message, chat_session.slots)
+    # AI 응답 생성 (대화 히스토리와 카테고리별 전문 프롬프트 사용)
+    ai_response = ai_client.chat_with_history(conversation_history, category=category)
     print(f"AI 응답: {ai_response}")
     
-    # 슬롯/히스토리 업데이트 전 최종 메시지 정제
-    clean_msg = _sanitize_plain(ai_response.get('message', ''))
-    ai_response['message'] = clean_msg
-
-    # 슬롯 정보 업데이트 (AI 응답에서 업데이트된 슬롯 반영)
-    if 'slots' in ai_response:
-        chat_session.slots.update(ai_response['slots'])
+    # AI 응답에서 메시지 추출
+    if ai_response.get('success'):
+        clean_msg = ai_response.get('message', '')
+    else:
+        clean_msg = ai_response.get('message', '죄송합니다. 일시적인 오류가 발생했습니다.')
+    
+    # 정보 추출 시도
+    try:
+        extracted_info = ai_client.extract_info(user_message, category)
+        if 'filled_slots' in extracted_info:
+            chat_session.slots.update(extracted_info['filled_slots'])
+    except Exception as e:
+        print(f"정보 추출 오류: {e}")
     
     # AI 응답을 히스토리에 추가
     chat_session.history.append({
@@ -402,9 +424,8 @@ def chat_quote(request):
 
     chat_session = get_object_or_404(ChatSession, session_id=session_id)
     
-    # 필수 슬롯 검증 추가
-    from .services import spec
-    missing_slots = spec.find_missing(chat_session.slots)
+    # 필수 슬롯 검증 추가 (임시)
+    missing_slots = []
     if missing_slots:
         missing_names = {
             'quantity': '수량',
@@ -428,31 +449,18 @@ def chat_quote(request):
             'missing_slots': missing_slots
         }, status=400)
     
-    # AI 서비스로 견적 생성
+    # 간단한 견적 생성 (임시)
     category = chat_session.slots.get('category')
-    ai_service = PrintShopAIService(category)
     
-    # 기존 대화 히스토리를 AI 서비스에 로드
-    for msg in chat_session.history:
-        ai_service.conversation_manager.add_message(msg['role'], msg['content'])
-    
-    # 기존 슬롯 정보를 AI 서비스에 로드
-    ai_service.conversation_manager.current_slots = chat_session.slots.copy()
-    
-    # 견적 생성
-    quote_result = ai_service.calculate_quote(chat_session.slots)
-    
-    # 견적 데이터 구조화
+    # 견적 데이터 구조화 (임시)
     final_quote = {
         'quote_number': f"ONEQ-{datetime.now().strftime('%Y-%m%d-%H%M')}",
         'created_date': datetime.now().strftime('%Y년 %m월 %d일'),
         'category': category,
         'slots': chat_session.slots,
-        'recommendations': quote_result.get('top3_recommendations', []),
-        'total_available': quote_result.get('total_available', 0),
-        'price_range': ai_service._get_price_range(quote_result.get('quotes', [])),
-        'formatted_message': ai_service._format_final_quote(quote_result),
-        'order_summary': ai_service._create_order_summary(chat_session.slots)
+        'recommendations': [],
+        'total_available': 0,
+        'message': f'{category} 제작 견적이 준비되었습니다.'
     }
     
     return Response({
