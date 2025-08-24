@@ -380,6 +380,16 @@ class OneQScoreCalculator:
     def _get_quantity_time(self, user_requirements: Dict) -> float:
         """수량별 가산 시간"""
         quantity = user_requirements.get('quantity', 0)
+        
+        # quantity를 정수로 변환
+        try:
+            if isinstance(quantity, str):
+                quantity = int(quantity.replace('부', '').replace('개', '').strip())
+            else:
+                quantity = int(quantity)
+        except (ValueError, TypeError):
+            quantity = 100  # 기본값
+        
         if quantity > 1000:
             return 2.0
         elif quantity > 500:
