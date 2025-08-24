@@ -299,11 +299,20 @@ def chatsession_send_message(request, session_id):
     else:
         clean_msg = ai_response.get('message', '죄송합니다. 일시적인 오류가 발생했습니다.')
     
-    # 정보 추출 시도
+    # 정보 추출 시도 (사용자 메시지에서 슬롯 정보 추출)
     try:
         extracted_info = ai_client.extract_info(user_message, category)
-        if 'filled_slots' in extracted_info:
-            chat_session.slots.update(extracted_info['filled_slots'])
+        print(f"추출된 정보: {extracted_info}")
+        
+        if extracted_info and 'filled_slots' in extracted_info and extracted_info['filled_slots']:
+            # 기존 슬롯에 새로운 정보 업데이트 (빈 값은 덮어쓰지 않음)
+            current_slots = chat_session.slots.copy()
+            for key, value in extracted_info['filled_slots'].items():
+                # 값이 비어있지 않을 때만 업데이트
+                if value and value.strip():
+                    current_slots[key] = value
+            chat_session.slots = current_slots
+            print(f"업데이트된 슬롯: {chat_session.slots}")
     except Exception as e:
         print(f"정보 추출 오류: {e}")
     
