@@ -20,6 +20,79 @@ import uuid
 from rest_framework.views import APIView
 import re
 
+# ===== 유틸리티 함수 =====
+
+def extract_quote_info(message: str) -> dict:
+    """AI 응답에서 견적서 정보를 추출"""
+    quote_info = {
+        'quote_number': f"ONEQ-{datetime.now().strftime('%Y-%m%d-%H%M')}",
+        'creation_date': datetime.now().strftime('%Y년 %m월 %d일'),
+        'category': '',
+        'specifications': {},
+        'quantity': '',
+        'due_days': '',
+        'region': '',
+        'budget': ''
+    }
+    
+    try:
+        # 카테고리 추출
+        if '📋 요청 정보:' in message:
+            # 요청 정보 섹션 찾기
+            start_idx = message.find('📋 요청 정보:')
+            end_idx = message.find('견적서가 완성되었습니다!')
+            
+            if start_idx != -1 and end_idx != -1:
+                info_section = message[start_idx:end_idx]
+                
+                # 각 줄을 파싱
+                lines = info_section.split('\n')
+                for line in lines:
+                    line = line.strip()
+                    if line.startswith('-'):
+                        # 정보 추출
+                        if '카테고리:' in line:
+                            quote_info['category'] = line.split('카테고리:')[1].strip()
+                        elif '용지:' in line:
+                            quote_info['specifications']['paper'] = line.split('용지:')[1].strip()
+                        elif '사이즈:' in line:
+                            quote_info['specifications']['size'] = line.split('사이즈:')[1].strip()
+                        elif '코팅:' in line:
+                            quote_info['specifications']['coating'] = line.split('코팅:')[1].strip()
+                        elif '접지:' in line:
+                            quote_info['specifications']['folding'] = line.split('접지:')[1].strip()
+                        elif '인쇄:' in line:
+                            quote_info['specifications']['printing'] = line.split('인쇄:')[1].strip()
+                        elif '후가공:' in line:
+                            quote_info['specifications']['finishing'] = line.split('후가공:')[1].strip()
+                        elif '수량:' in line:
+                            quote_info['quantity'] = line.split('수량:')[1].strip()
+                        elif '납기일:' in line:
+                            quote_info['due_days'] = line.split('납기일:')[1].strip()
+                        elif '지역:' in line:
+                            quote_info['region'] = line.split('지역:')[1].strip()
+                        elif '예산:' in line:
+                            quote_info['budget'] = line.split('예산:')[1].strip()
+        
+        # 견적번호 추출 (=== 최종 견적서 === 섹션에서)
+        if '=== 최종 견적서 ===' in message:
+            quote_section_start = message.find('=== 최종 견적서 ===')
+            if quote_section_start != -1:
+                # 견적번호 패턴 찾기 (ONEQ-YYYY-MMDD-HHMM 형식)
+                import re
+                quote_number_match = re.search(r'ONEQ-\d{4}-\d{4}-\d{4}', message)
+                if quote_number_match:
+                    quote_info['quote_number'] = quote_number_match.group()
+                
+                # 생성일 추출
+                date_match = re.search(r'\d{4}년\s*\d{1,2}월\s*\d{1,2}일', message)
+                if date_match:
+                    quote_info['creation_date'] = date_match.group()
+                    
+    except Exception as e:
+        print(f"Error extracting quote info: {e}")
+    return quote_info
+
 # ===== 단계별 인쇄소 등록 Views =====
 
 @api_view(['POST'])
@@ -328,7 +401,17 @@ def chatsession_send_message(request, session_id):
     })
     
     # 최종 견적서가 생성되었는지 확인하고 인쇄소 추천 추가
+    is_final_quote = False
+    quote_info = None
+    recommended_shops = None
+    
     if "=== 최종 견적서 ===" in clean_msg and "요청하신 정보에 맞는 인쇄소를 추천해드리겠습니다" in clean_msg:
+        is_final_quote = True
+        
+        # 견적 정보 추출
+        quote_info = extract_quote_info(clean_msg)
+        
+        # 추천 인쇄소 가져오기
         recommended_printshops = get_recommended_printshops(chat_session.slots)
         
         if recommended_printshops:
@@ -345,10 +428,30 @@ def chatsession_send_message(request, session_id):
                 shop_info += f"   ⏰ 제작기간: {shop['estimated_production_time']}\n"
                 shop_info += f"   🚚 배송방법: {shop['delivery_methods']}\n\n"
             
-            shop_info += "이 견적서와 디자인 파일을 가지고 추천 인쇄소에 방문하시면 됩니다.\n\n좋은 하루 되세요! 원하시는 결과물이 나오길 바랍니다! 😊"
-            
+            shop_info += "이 견적서와 디자인 파일을 가지고 추천 인쇄소에 방문하시면 됩니다.\n\n좋은 하루 되세요! 원하시는 결과물이 나오길 바랍니다! 😊"            
             # AI 응답 업데이트
             chat_session.history[-1]['content'] = clean_msg + shop_info
+            
+            # 추천 인쇄소 데이터 구조화
+            recommended_shops = []
+            for shop in recommended_printshops[:3]:
+                # 세부 점수 정보 추출
+                score_details = shop.get('score_details', {})
+                
+                recommended_shops.append({
+                    'name': shop['name'],
+                    'oneq_score': shop['recommendation_score'],
+                    'price_score': score_details.get('price_score', 0),
+                    'deadline_score': score_details.get('deadline_score', 0),
+                    'workfit_score': score_details.get('workfit_score', 0),
+                    'recommendation_reason': shop['recommendation_reason'],
+                    'phone': shop['phone'],
+                    'address': shop['address'],
+                    'email': shop['email'],
+                    'estimated_price': shop['estimated_total_price'],
+                    'production_period': shop['estimated_production_time'],
+                    'delivery_method': shop['delivery_methods']
+                })
         else:
             # 추천 인쇄소가 없는 경우
             no_shop_msg = "\n\n😔 죄송합니다. 현재 요청하신 조건에 맞는 인쇄소가 없습니다.\n다른 조건으로 다시 시도해보시거나, 나중에 다시 문의해주세요."
@@ -356,7 +459,40 @@ def chatsession_send_message(request, session_id):
     
     chat_session.save()
     serializer = ChatSessionSerializer(chat_session)
-    return Response(serializer.data)
+    
+    # 응답 데이터 구성
+    response_data = serializer.data
+    
+    # 최종 견적인 경우 추가 데이터 포함
+    if is_final_quote:
+        # 견적 정보에서 필요한 모든 필드 추출
+        final_quote_data = {
+            'quote_number': quote_info.get('quote_number', f"ONEQ-{datetime.now().strftime('%Y-%m%d-%H%M')}"),
+            'creation_date': quote_info.get('creation_date', datetime.now().strftime('%Y년 %m월 %d일')),
+            'category': quote_info.get('category', chat_session.slots.get('category', '')),
+            'quantity': quote_info.get('quantity', chat_session.slots.get('quantity', '')),
+            'size': quote_info.get('specifications', {}).get('size', chat_session.slots.get('size', '')),
+            'paper': quote_info.get('specifications', {}).get('paper', chat_session.slots.get('paper', '')),
+            'coating': quote_info.get('specifications', {}).get('coating', chat_session.slots.get('coating', '')),
+            'due_days': quote_info.get('due_days', chat_session.slots.get('due_days', '')),
+            'budget': quote_info.get('budget', chat_session.slots.get('budget', '')),
+            'region': quote_info.get('region', chat_session.slots.get('region', '')),
+            'available_printshops': len(recommended_shops) if recommended_shops else 0,
+            'price_range': get_price_range(recommended_shops) if recommended_shops else '정보 없음'
+        }
+        
+        response_data.update({
+            'is_final_quote': True,
+            'quote_info': quote_info,
+            'recommended_shops': recommended_shops,
+            'final_quote_data': final_quote_data
+        })
+    else:
+        response_data.update({
+            'is_final_quote': False
+        })
+    
+    return Response(response_data)
 
 @api_view(['GET'])
 def chatsession_history(request, session_id):
@@ -609,3 +745,33 @@ def parse_budget_range(budget_str):
             return (val * 0.8, val * 1.2)
     except:
         return None
+
+def get_price_range(recommended_shops):
+    """추천 인쇄소들의 가격대를 계산"""
+    if not recommended_shops:
+        return '정보 없음'
+    
+    try:
+        # 예상 가격에서 숫자만 추출
+        prices = []
+        for shop in recommended_shops:
+            estimated_price = shop.get('estimated_price', '')
+            if estimated_price:
+                # "30만원" -> 300000
+                price_str = str(estimated_price).replace('만원', '').replace(',', '').strip()
+                if price_str.isdigit():
+                    prices.append(int(price_str) * 10000)
+        
+        if prices:
+            min_price = min(prices)
+            max_price = max(prices)
+            
+            if min_price == max_price:
+                return f"{min_price//10000}만원"
+            else:
+                return f"{min_price//10000}~{max_price//10000}만원"
+        else:
+            return '정보 없음'
+    except Exception as e:
+        print(f"가격대 계산 오류: {e}")
+        return '정보 없음'
