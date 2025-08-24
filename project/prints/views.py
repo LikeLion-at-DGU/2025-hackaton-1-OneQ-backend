@@ -447,7 +447,15 @@ class PrintShopRankAPIView(APIView):
                 return (eng in cats) or (category in cats)
 
             candidates = [s for s in all_printshops if (request.data.get("category") or "명함") in (s.available_categories or [])]
-            result = score_and_rank(request.data, candidates)
+            
+            # 원큐스코어 계산
+            scored_printshops = calculate_printshop_scores(candidates, request.data)
+            
+            result = {
+                'category': category,
+                'candidates': len(candidates),
+                'recommendations': scored_printshops[:3]  # 상위 3개만 반환
+            }
             return Response(result, status=200)
         except Exception as e:
             return Response({"detail": str(e)}, status=400)
@@ -532,14 +540,21 @@ def get_recommended_printshops(slots):
         }
         eng_category = category_mapping.get(category, category)
         
-        # available_categories에 해당 카테고리가 포함된 인쇄소만 필터링
-        printshops = printshops.filter(
-            available_categories__contains=[eng_category]
-        )
+        # Python 레벨에서 카테고리 필터링 (더 안전함)
+        filtered_printshops = []
+        for shop in printshops:
+            available_cats = shop.available_categories or []
+            if eng_category in available_cats or category in available_cats:
+                filtered_printshops.append(shop)
+        printshops = filtered_printshops
     
     # 지역 필터링 (부분 일치)
     if region:
-        printshops = printshops.filter(address__icontains=region)
+        filtered_printshops = []
+        for shop in printshops:
+            if region in shop.address:
+                filtered_printshops.append(shop)
+        printshops = filtered_printshops
     
     # 예산 필터링 (간단한 텍스트 매칭)
     if budget:
@@ -551,7 +566,8 @@ def get_recommended_printshops(slots):
             pass
     
     # 상위 10개 후보 선정 (원큐스코어 계산을 위해)
-    candidates = list(printshops.order_by('-created_at')[:10])
+    # 이미 Python 리스트이므로 슬라이싱 사용
+    candidates = printshops[:10]
     
     # 원큐스코어 계산
     scored_printshops = calculate_printshop_scores(candidates, slots)
