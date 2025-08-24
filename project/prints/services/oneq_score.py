@@ -17,6 +17,7 @@ class OneQScoreCalculator:
     
     def __init__(self):
         self.t0 = datetime.now()  # 현재 시간 (기준점)
+        self._price_cache = {}  # 가격 파싱 캐시
     
     def calculate_oneq_score(self, printshop: PrintShop, user_requirements: Dict) -> Dict:
         """
@@ -204,6 +205,12 @@ class OneQScoreCalculator:
             
             print(f"🔍 가격 파싱 시작: {category}, 수량: {quantity}")
             
+            # 캐시 키 생성
+            cache_key = f"{printshop.id}_{category}_{quantity}_{getattr(printshop, field_name, '')[:50]}"
+            if cache_key in self._price_cache:
+                print(f"📦 캐시된 결과 사용: {self._price_cache[cache_key]}")
+                return self._price_cache[cache_key]
+            
             # 카테고리별 가격 정보 필드 매핑
             price_fields = {
                 '명함': 'business_card_quantity_price_info',
@@ -274,6 +281,9 @@ class OneQScoreCalculator:
                 'total_price': unit_price * quantity
             }
             print(f"✅ 마지막 가격 사용: {result}")
+            
+            # 캐시에 저장
+            self._price_cache[cache_key] = result
             return result
             
         except Exception as e:
@@ -325,7 +335,8 @@ class OneQScoreCalculator:
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.1,
-                max_tokens=100
+                max_tokens=100,
+                timeout=30  # 30초 타임아웃 추가
             )
             
             result_text = response.choices[0].message.content.strip()
