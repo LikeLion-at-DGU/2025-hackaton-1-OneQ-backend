@@ -9,6 +9,7 @@ from .db_formatter import DBFormatter
 from .conversation_manager import ConversationManager
 from .oneqscore import score_and_rank
 from . import spec
+import json as _json
 
 
 def _to_int(v, default=0):
@@ -19,10 +20,6 @@ def _to_int(v, default=0):
     return int(s) if s else default
 
 def _to_money(v, default=0):
-    """
-    '15만원', '120,000원', '7만 5천원', '200000', '10만원이하', '5만원이상' 등을 정규화 → 원 단위 정수
-    범위 표현도 처리 (이하/이상/미만/초과)
-    """
     if v is None:
         return default
     
@@ -189,7 +186,7 @@ class PrintShopAIService:
         # 3) 활성/등록완료 인쇄소 조회
         all_printshops = PrintShop.objects.filter(
             is_active=True,
-            registration_status="completed",
+            is_verified=True,
         )
         print(f"활성화된 인쇄소 수: {all_printshops.count()}")
 
@@ -203,16 +200,20 @@ class PrintShopAIService:
             if isinstance(raw, str):
                 raw_str = raw.strip()
                 parsed = None
-                # JSON 리스트 문자열 시도: '["포스터","배너"]'
-                if (raw_str.startswith("[") and raw_str.endswith("]")) or (raw_str.startswith('"') and raw_str.endswith('"')):
+                # JSON 리스트만 로드 (문자열은 로드 안 함)
+                if raw_str.startswith("[") and raw_str.endswith("]"):
                     try:
                         parsed = _json.loads(raw_str)
                     except Exception:
                         parsed = None
                 if parsed is None:
-                    # 콤마 구분 문자열 시도: "포스터, 배너"
-                    parsed = [p.strip() for p in raw_str.split(",") if p.strip()]
+                    # 콤마가 없고 그냥 단일 토큰이면 단일 리스트로
+                    if "," not in raw_str:
+                        parsed = [raw_str]
+                    else:
+                        parsed = [p.strip() for p in raw_str.split(",") if p.strip()]
                 available = parsed
+
             elif isinstance(raw, list):
                 available = raw
             else:
@@ -701,7 +702,7 @@ JSON 형태로 응답해주세요:
             
             # 대화 히스토리 업데이트 (이미 로드된 경우 중복 방지)
             if not self.conversation_manager.conversation_history or \
-               self.conversation_manager.conversation_history[-1]['content'] != message:
+                self.conversation_manager.conversation_history[-1]['content'] != message:
                 self.conversation_manager.add_message('user', message)
             
             # DB 컨텍스트 생성
@@ -938,6 +939,14 @@ JSON 형태로 응답해주세요:
     
     def _process_gpt_response(self, response: Dict, current_slots: Dict) -> Dict:
         try:
+            # 문자열(JSON)로 온 경우 파싱
+            if isinstance(response, str):
+                try:
+                    response = _json.loads(response)
+                except Exception as e:
+                    print(f"GPT 응답 JSON 파싱 실패: {e}")
+                    return self._simple_fallback_response("", current_slots)
+
             print(f"=== GPT 응답 처리 디버깅 시작 ===")
             print(f"GPT 원본 응답: {response}")
             print(f"GPT 응답 타입: {type(response)}")
@@ -1264,11 +1273,38 @@ JSON 형태로 응답해주세요:
             if choices:
                 response['choices'] = choices
 
+        if not missing:
+            want_quote = (response.get("action") == "quote") or (response.get("type") == "quote")
+            if want_quote and not self._user_confirmed():
+                response["action"] = "ask"
+                response["type"] = "ask"
+                # 간단 요약 + 최종 질문
+                summary = self._create_order_summary(effective)
+                # 사용자가 보기 쉬운 한 줄 질문만 내려보내고, 본문 메시지는 질문으로 치환
+                response["message"] = "지금 정보로 최종 견적 리포트를 생성할까요? (네/아니요)"
+                response["question"] = response["message"]
+                
             # 견적 관련 필드 제거
             for k in ('quote_data', 'final_quote'):
                 response.pop(k, None)
 
         return response
+
+    def _user_confirmed(self) -> bool:
+        # 최근 사용자 발화 기준으로 간단 확인
+        yes_kw = ["네", "예", "좋아", "좋아요", "확인", "진행", "견적", "추천해줘", "해줘", "맞아", "맞습니다"]
+        no_kw  = ["아니", "아니요", "수정", "바꿔", "다시", "보류", "취소"]
+
+        for msg in reversed(self.conversation_manager.conversation_history or []):
+            if msg.get("role") == "user":
+                t = (msg.get("content") or "").strip().lower()
+                if any(k in t for k in no_kw):
+                    return False
+                if any(k in t for k in yes_kw):
+                    return True
+                # 첫 번째 유저 메시지에서 결론 못 내리면 False
+                return False
+        return False
 
 
 
@@ -1309,10 +1345,13 @@ def ask_action(history: List[Dict], slots: Dict) -> Dict:
         elif raw in ('confirm',):
             act = 'CONFIRM'
         elif raw in ('quote', 'match'):
-            # 모든 필수 슬롯이 채워졌는지 최종 확인
             req = spec.required_slots(category)
             missing = [k for k in req if not (response.get('slots', {}).get(k) or slots.get(k))]
-            act = 'MATCH' if not missing else 'ASK'
+            # 컨펌 없으면 ASK로
+            if not missing and not ai_service._user_confirmed():
+                act = 'ASK'
+            else:
+                act = 'MATCH' if not missing else 'ASK'
         else:
             act = 'ASK'
 
@@ -1321,7 +1360,7 @@ def ask_action(history: List[Dict], slots: Dict) -> Dict:
             'action': act,
             'message': response.get('message', ''),
             'filled_slots': response.get('slots', {}),
-            'question': response.get('next_question', '')
+            'question': response.get('question') or response.get('next_question', '')
         }
         
     except Exception as e:

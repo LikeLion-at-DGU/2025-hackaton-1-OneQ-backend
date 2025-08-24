@@ -95,7 +95,7 @@ class PrintShop(models.Model):
                                              ('pending', '심의 대기'), # 사업자등록증 심의 대기
                                              ('completed', '등록 완료'), # 3단계 완료
                                              ('rejected', '등록 거부') # 등록 거부
-                                         ]) # 현재 등록 진행 상황 추적적
+                                         ]) # 현재 등록 진행 상황 추적
     
     # === 상태 관리 ===
     is_verified = models.BooleanField(default=False, verbose_name="인증 완료") # 사업자등록증 인증 완료 여부
