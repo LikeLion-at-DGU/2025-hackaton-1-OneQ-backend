@@ -91,7 +91,6 @@ def extract_quote_info(message: str, category: str = None) -> dict:
             quote_section_start = message.find('=== 최종 견적서 ===')
             if quote_section_start != -1:
                 # 견적번호 패턴 찾기 (ONEQ-YYYY-MMDD-HHMM 형식)
-                import re
                 quote_number_match = re.search(r'ONEQ-\d{4}-\d{4}-\d{4}', message)
                 if quote_number_match:
                     quote_info['quote_number'] = quote_number_match.group()
@@ -467,48 +466,48 @@ def chatsession_send_message(request, session_id):
             shop_info += "이 견적서와 디자인 파일을 가지고 추천 인쇄소에 방문하시면 됩니다.\n\n좋은 하루 되세요! 원하시는 결과물이 나오길 바랍니다! 😊"            
             # AI 응답 업데이트
             chat_session.history[-1]['content'] = clean_msg + shop_info
-             
-             # 추천 인쇄소 데이터 구조화
-             recommended_shops = []
-             for shop in recommended_printshops[:3]:
-                 # 세부 점수 정보 추출
-                 score_details = shop.get('score_details', {})
-                 
-                 # 디버깅: 세부점수 확인
-                 print(f"=== 인쇄소 {shop['name']} 세부점수 디버깅 ===")
-                 print(f"전체 score_details: {score_details}")
-                 print(f"price_score: {score_details.get('price_score', 0)}")
-                 print(f"deadline_score: {score_details.get('deadline_score', 0)}")
-                 print(f"workfit_score: {score_details.get('workfit_score', 0)}")
-                 print(f"전체 shop 데이터: {shop}")
-                 
-                 # 세부점수 상세 정보 추출
-                 price_details = score_details.get('details', {}).get('price_details', {})
-                 deadline_details = score_details.get('details', {}).get('deadline_details', {})
-                 workfit_details = score_details.get('details', {}).get('workfit_details', {})
-                 
-                 recommended_shops.append({
-                     'name': shop['name'],
-                     'oneq_score': shop['recommendation_score'],
-                     'price_score': score_details.get('price_score', 0),
-                     'deadline_score': score_details.get('deadline_score', 0),
-                     'workfit_score': score_details.get('workfit_score', 0),
-                     'recommendation_reason': shop['recommendation_reason'],
-                     'phone': shop['phone'],
-                     'address': shop['address'],
-                     'email': shop['email'],
-                     'estimated_price': shop['estimated_total_price'],
-                     'production_period': shop['estimated_production_time'],
-                     'delivery_method': shop['delivery_methods'],
-                     'score_details': {
-                         'price_score': score_details.get('price_score', 0),
-                         'deadline_score': score_details.get('deadline_score', 0),
-                         'workfit_score': score_details.get('workfit_score', 0),
-                         'price_details': price_details,
-                         'deadline_details': deadline_details,
-                         'workfit_details': workfit_details
-                     }
-                 })
+            
+            # 추천 인쇄소 데이터 구조화
+            recommended_shops = []
+            for shop in recommended_printshops[:3]:
+                # 세부 점수 정보 추출
+                score_details = shop.get('score_details', {})
+                
+                # 디버깅: 세부점수 확인
+                print(f"=== 인쇄소 {shop['name']} 세부점수 디버깅 ===")
+                print(f"전체 score_details: {score_details}")
+                print(f"price_score: {score_details.get('price_score', 0)}")
+                print(f"deadline_score: {score_details.get('deadline_score', 0)}")
+                print(f"workfit_score: {score_details.get('workfit_score', 0)}")
+                print(f"전체 shop 데이터: {shop}")
+                
+                # 세부점수 상세 정보 추출
+                price_details = score_details.get('details', {}).get('price_details', {})
+                deadline_details = score_details.get('details', {}).get('deadline_details', {})
+                workfit_details = score_details.get('details', {}).get('workfit_details', {})
+                
+                recommended_shops.append({
+                    'name': shop['name'],
+                    'oneq_score': shop['recommendation_score'],
+                    'price_score': score_details.get('price_score', 0),
+                    'deadline_score': score_details.get('deadline_score', 0),
+                    'workfit_score': score_details.get('workfit_score', 0),
+                    'recommendation_reason': shop['recommendation_reason'],
+                    'phone': shop['phone'],
+                    'address': shop['address'],
+                    'email': shop['email'],
+                    'estimated_price': shop['estimated_total_price'],
+                    'production_period': shop['estimated_production_time'],
+                    'delivery_method': shop['delivery_methods'],
+                    'score_details': {
+                        'price_score': score_details.get('price_score', 0),
+                        'deadline_score': score_details.get('deadline_score', 0),
+                        'workfit_score': score_details.get('workfit_score', 0),
+                        'price_details': price_details,
+                        'deadline_details': deadline_details,
+                        'workfit_details': workfit_details
+                    }
+                })
         else:
             # 추천 인쇄소가 없는 경우
             no_shop_msg = "\n\n😔 죄송합니다. 현재 요청하신 조건에 맞는 인쇄소가 없습니다.\n다른 조건으로 다시 시도해보시거나, 나중에 다시 문의해주세요."
@@ -842,7 +841,8 @@ def parse_budget_range(budget_str):
         else:
             val = int(budget_str.replace('만원', '').strip()) * 10000
             return (val * 0.8, val * 1.2)
-    except:
+    except Exception as e:
+        print(f"예산 범위 파싱 오류: {e}")
         return None
 
 def get_price_range(recommended_shops):
