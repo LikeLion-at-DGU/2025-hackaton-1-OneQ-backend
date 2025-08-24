@@ -76,10 +76,17 @@ class PrintShopAdmin(admin.ModelAdmin):
     def business_license_preview(self, obj):
         """사업자등록증 미리보기"""
         if obj.business_license:
-            return format_html(
-                '<a href="{}" target="_blank">사업자등록증 보기</a>',
-                obj.business_license.url
-            )
+            # 파일이 실제로 존재하는지 확인
+            if obj.business_license.storage.exists(obj.business_license.name):
+                return format_html(
+                    '<a href="{}" target="_blank">사업자등록증 보기</a>',
+                    obj.business_license.url
+                )
+            else:
+                return format_html(
+                    '<span style="color: red;">파일이 서버에 존재하지 않습니다: {}</span>',
+                    obj.business_license.name
+                )
         return "업로드된 파일 없음"
     business_license_preview.short_description = '사업자등록증'
     
