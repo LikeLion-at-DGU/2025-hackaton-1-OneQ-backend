@@ -25,6 +25,5 @@ urlpatterns = [
     path("api/", include("prints.urls")),
 ]
 
-# 개발 환경에서 미디어 파일 서빙
-if settings.DEBUG:
-    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+# 미디어 파일 서빙 (개발 및 프로덕션 환경 모두)
+urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
