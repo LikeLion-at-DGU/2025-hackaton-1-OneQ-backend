@@ -65,6 +65,15 @@ class OneQScoreCalculator:
         budget = user_requirements.get('budget', '')
         quantity = user_requirements.get('quantity', 0)
         
+        # quantity를 정수로 변환
+        try:
+            if isinstance(quantity, str):
+                quantity = int(quantity.replace('부', '').replace('개', '').strip())
+            else:
+                quantity = int(quantity)
+        except (ValueError, TypeError):
+            quantity = 100  # 기본값
+        
         # 카테고리별 가격 정보 파싱
         price_info = self._parse_price_info(printshop, category, quantity)
         if not price_info:
@@ -105,6 +114,17 @@ class OneQScoreCalculator:
     def _calculate_deadline_score(self, printshop: PrintShop, user_requirements: Dict) -> float:
         """납기 충족도 계산 (Deadline_i, 30%)"""
         due_days = user_requirements.get('due_days', 0)
+        
+        # due_days를 정수로 변환
+        try:
+            if isinstance(due_days, str):
+                # "3일", "3일이내", "3일 내" 등 파싱
+                due_days = int(re.findall(r'(\d+)', due_days)[0])
+            else:
+                due_days = int(due_days)
+        except (ValueError, TypeError, IndexError):
+            due_days = 7  # 기본값
+        
         if not due_days:
             return 50.0
         
@@ -368,22 +388,31 @@ def calculate_printshop_scores(printshops: List[PrintShop], user_requirements: D
     scored_printshops = []
     
     for printshop in printshops:
-        score_result = calculator.calculate_oneq_score(printshop, user_requirements)
+        try:
+            score_result = calculator.calculate_oneq_score(printshop, user_requirements)
+        except Exception as e:
+            print(f"인쇄소 {printshop.name} 점수 계산 오류: {e}")
+            # 기본 점수로 계속 진행
+            score_result = {
+                'oneq_score': 50.0,
+                'recommendation_reason': '기본 점수',
+                'details': {'price_details': {'total_price': 0}}
+            }
         
         scored_printshop = {
-            'id': printshop.id,
-            'name': printshop.name,
-            'phone': printshop.phone,
-            'address': printshop.address,
-            'email': printshop.email,
-            'recommendation_score': score_result['oneq_score'],
-            'recommendation_reason': score_result['recommendation_reason'],
-            'estimated_total_price': f"{score_result['details']['price_details']['total_price']:,}원",
-            'estimated_production_time': printshop.production_time,
-            'delivery_methods': printshop.delivery_options,
-            'description': printshop.description,
-            'bulk_discount': printshop.bulk_discount,
-            'available_categories': printshop.available_categories,
+            'id': getattr(printshop, 'id', 0),
+            'name': getattr(printshop, 'name', '알 수 없는 인쇄소'),
+            'phone': getattr(printshop, 'phone', ''),
+            'address': getattr(printshop, 'address', ''),
+            'email': getattr(printshop, 'email', ''),
+            'recommendation_score': score_result.get('oneq_score', 0),
+            'recommendation_reason': score_result.get('recommendation_reason', '기본 추천'),
+            'estimated_total_price': f"{score_result.get('details', {}).get('price_details', {}).get('total_price', 0):,}원",
+            'estimated_production_time': getattr(printshop, 'production_time', ''),
+            'delivery_methods': getattr(printshop, 'delivery_options', ''),
+            'description': getattr(printshop, 'description', ''),
+            'bulk_discount': getattr(printshop, 'bulk_discount', ''),
+            'available_categories': getattr(printshop, 'available_categories', []),
             'score_details': score_result
         }
         

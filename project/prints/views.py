@@ -570,10 +570,14 @@ def get_recommended_printshops(slots):
     candidates = printshops[:10]
     
     # 원큐스코어 계산
-    scored_printshops = calculate_printshop_scores(candidates, slots)
-    
-    # 상위 3개 반환
-    return scored_printshops[:3]
+    try:
+        scored_printshops = calculate_printshop_scores(candidates, slots)
+        # 상위 3개 반환
+        return scored_printshops[:3]
+    except Exception as e:
+        print(f"원큐스코어 계산 오류: {e}")
+        # 오류 발생 시 빈 리스트 반환
+        return []
 
 def parse_budget_range(budget_str):
     """예산 문자열을 범위로 파싱"""
