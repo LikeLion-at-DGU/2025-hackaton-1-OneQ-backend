@@ -196,6 +196,8 @@ class OneQScoreCalculator:
     def _parse_price_info(self, printshop: PrintShop, category: str, quantity: int) -> Optional[Dict]:
         """카테고리별 가격 정보 파싱 (AI + 정규표현식 혼합)"""
         try:
+            print(f"🔍 가격 파싱 시작: {category}, 수량: {quantity}")
+            
             # 카테고리별 가격 정보 필드 매핑
             price_fields = {
                 '명함': 'business_card_quantity_price_info',
@@ -207,55 +209,75 @@ class OneQScoreCalculator:
             }
             
             field_name = price_fields.get(category)
+            print(f"📋 필드명: {field_name}")
+            
             if not field_name:
+                print(f"❌ 카테고리 '{category}'에 대한 필드명 없음")
                 return None
             
             price_text = getattr(printshop, field_name, '')
+            print(f"📝 가격 텍스트: {price_text}")
+            
             if not price_text:
+                print(f"❌ 가격 텍스트가 비어있음")
                 return None
             
             # 1. 먼저 정규표현식으로 시도
             prices = re.findall(r'(\d+)(?:부|매)\s*[:\-]\s*(\d+)원', price_text)
+            print(f"🔍 정규표현식 결과: {prices}")
             
             if not prices:
+                print(f"⚠️ 정규표현식 실패, AI 파싱 시도")
                 # 2. 정규표현식 실패 시 AI 파싱 시도
                 try:
                     ai_prices = self._ai_parse_prices(price_text, category, quantity)
                     if ai_prices:
+                        print(f"✅ AI 파싱 성공: {ai_prices}")
                         return ai_prices
                 except Exception as ai_error:
-                    print(f"AI 파싱 실패, 기본값 사용: {ai_error}")
+                    print(f"❌ AI 파싱 실패: {ai_error}")
                 
                 # 3. AI도 실패하면 기본 가격 추정
-                return {
+                default_price = {
                     'unit_price': 50000,  # 기본 단가
                     'total_price': 50000 * quantity
                 }
+                print(f"📊 기본 가격 사용: {default_price}")
+                return default_price
             
             # 수량에 맞는 가격 찾기
             for qty, price in prices:
                 if int(qty) >= quantity:
                     unit_price = int(price) // int(qty)
-                    return {
+                    result = {
                         'unit_price': unit_price,
                         'total_price': unit_price * quantity
                     }
+                    print(f"✅ 정규표현식 파싱 성공: {result}")
+                    return result
             
             # 마지막 가격 사용
             last_qty, last_price = prices[-1]
             unit_price = int(last_price) // int(last_qty)
-            return {
+            result = {
                 'unit_price': unit_price,
                 'total_price': unit_price * quantity
             }
+            print(f"✅ 마지막 가격 사용: {result}")
+            return result
             
         except Exception as e:
-            print(f"가격 정보 파싱 오류: {e}")
+            print(f"❌ 가격 정보 파싱 오류: {e}")
+            import traceback
+            traceback.print_exc()
             return None
     
     def _ai_parse_prices(self, price_text: str, category: str, quantity: int) -> Optional[Dict]:
         """AI를 사용한 가격 정보 파싱"""
         try:
+            print(f"🔍 AI 파싱 시작: {category}, 수량: {quantity}")
+            print(f"📝 원본 텍스트: {price_text}")
+            
             prompt = f"""
 다음은 {category} 인쇄 가격 정보입니다. 이 텍스트에서 수량별 가격을 추출해주세요.
 
@@ -279,6 +301,7 @@ class OneQScoreCalculator:
 3. 숫자만 반환해주세요 (콤마, 원 제외)
 """
 
+            print(f"🤖 OpenAI API 호출 중...")
             response = openai.ChatCompletion.create(
                 model="gpt-4o-mini",
                 messages=[
@@ -290,19 +313,26 @@ class OneQScoreCalculator:
             )
             
             result_text = response.choices[0].message.content.strip()
+            print(f"🤖 AI 응답: {result_text}")
             
             # JSON 파싱
             if result_text.startswith('{') and result_text.endswith('}'):
                 result = json.loads(result_text)
-                return {
+                parsed_result = {
                     'unit_price': int(result.get('unit_price', 0)),
                     'total_price': int(result.get('total_price', 0))
                 }
+                print(f"✅ 파싱 성공: {parsed_result}")
+                return parsed_result
+            else:
+                print(f"❌ JSON 형식 아님: {result_text}")
             
             return None
             
         except Exception as e:
-            print(f"AI 가격 파싱 오류: {e}")
+            print(f"❌ AI 가격 파싱 오류: {e}")
+            import traceback
+            traceback.print_exc()
             return None
     
     def _parse_budget(self, budget_str: str) -> Optional[int]:
@@ -425,6 +455,10 @@ class OneQScoreCalculator:
     def _ai_option_match(self, user_option: str, option_text: str, option_type: str) -> bool:
         """AI를 사용한 옵션 매칭"""
         try:
+            print(f"🔍 AI 옵션 매칭: {option_type}")
+            print(f"👤 사용자 요청: {user_option}")
+            print(f"🏪 제공 옵션: {option_text}")
+            
             prompt = f"""
 다음은 인쇄 옵션 정보입니다. 사용자가 요청한 옵션이 제공되는 옵션과 일치하는지 판단해주세요.
 
@@ -448,6 +482,7 @@ class OneQScoreCalculator:
 3. true/false만 반환
 """
 
+            print(f"🤖 OpenAI API 호출 중...")
             response = openai.ChatCompletion.create(
                 model="gpt-4o-mini",
                 messages=[
@@ -459,16 +494,23 @@ class OneQScoreCalculator:
             )
             
             result_text = response.choices[0].message.content.strip()
+            print(f"🤖 AI 응답: {result_text}")
             
             # JSON 파싱
             if result_text.startswith('{') and result_text.endswith('}'):
                 result = json.loads(result_text)
-                return result.get('match', False)
+                match_result = result.get('match', False)
+                print(f"✅ 매칭 결과: {match_result}")
+                return match_result
+            else:
+                print(f"❌ JSON 형식 아님: {result_text}")
             
             return False
             
         except Exception as e:
-            print(f"AI 옵션 매칭 오류: {e}")
+            print(f"❌ AI 옵션 매칭 오류: {e}")
+            import traceback
+            traceback.print_exc()
             return False
     
     def _generate_recommendation_reason(self, price_score: float, deadline_score: float, 
