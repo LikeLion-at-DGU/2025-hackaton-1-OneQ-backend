@@ -1057,6 +1057,10 @@ JSON 형태로 응답해주세요:
                 quotes.append({
                     'printshop_name': r['shop_name'],
                     'printshop_phone': r['phone'],
+                    'printshop_email': r.get('email', ''),
+                    'printshop_address': r.get('address', ''),
+                    'email': r.get('email', ''),                  
+                    'address': r.get('address', ''),
                     'base_price': int(r['total_price'] / max(1, _to_int(slots.get("quantity"), 1))),  # 대략 단가
                     'quantity': _to_int(slots.get("quantity"), 1),
                     'total_price': r['total_price'],
@@ -1077,6 +1081,10 @@ JSON 형태로 응답해주세요:
                 top3.append({
                     'printshop_name': r['shop_name'],
                     'printshop_phone': r['phone'],
+                    'printshop_email': r.get('email', ''),      
+                    'printshop_address': r.get('address', ''),    
+                    'email': r.get('email', ''),                  
+                    'address': r.get('address', ''),
                     'base_price': int(r['total_price'] / max(1, _to_int(slots.get("quantity"), 1))),
                     'quantity': _to_int(slots.get("quantity"), 1),
                     'total_price': r['total_price'],
