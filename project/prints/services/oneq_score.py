@@ -237,7 +237,7 @@ class OneQScoreCalculator:
                 except Exception as ai_error:
                     print(f"❌ AI 파싱 실패: {ai_error}")
                 
-                # 3. AI도 실패하면 기본 가격 추정
+                                # 3. AI도 실패하면 기본 가격 추정
                 default_price = {
                     'unit_price': 50000,  # 기본 단가
                     'total_price': 50000 * quantity
@@ -247,8 +247,10 @@ class OneQScoreCalculator:
             
             # 수량에 맞는 가격 찾기
             for qty, price in prices:
-                if int(qty) >= quantity:
-                    unit_price = int(price) // int(qty)
+                qty_int = int(qty)
+                price_int = int(price)
+                if qty_int >= quantity:
+                    unit_price = price_int // qty_int
                     result = {
                         'unit_price': unit_price,
                         'total_price': unit_price * quantity
@@ -258,7 +260,9 @@ class OneQScoreCalculator:
             
             # 마지막 가격 사용
             last_qty, last_price = prices[-1]
-            unit_price = int(last_price) // int(last_qty)
+            last_qty_int = int(last_qty)
+            last_price_int = int(last_price)
+            unit_price = last_price_int // last_qty_int
             result = {
                 'unit_price': unit_price,
                 'total_price': unit_price * quantity
@@ -302,7 +306,7 @@ class OneQScoreCalculator:
 """
 
             print(f"🤖 OpenAI API 호출 중...")
-            response = openai.ChatCompletion.create(
+            response = openai.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
                     {"role": "system", "content": "당신은 가격 정보를 정확히 파싱하는 전문가입니다."},
@@ -453,18 +457,20 @@ class OneQScoreCalculator:
         return False
     
     def _ai_option_match(self, user_option: str, option_text: str, option_type: str) -> bool:
-        """AI를 사용한 옵션 매칭"""
+        """AI를 사용한 옵션 매칭 (설명 기반 의미 매칭)"""
         try:
             print(f"🔍 AI 옵션 매칭: {option_type}")
             print(f"👤 사용자 요청: {user_option}")
             print(f"🏪 제공 옵션: {option_text}")
             
             prompt = f"""
-다음은 인쇄 옵션 정보입니다. 사용자가 요청한 옵션이 제공되는 옵션과 일치하는지 판단해주세요.
+다음은 인쇄 옵션 정보입니다. 사용자가 요청한 옵션이 제공되는 옵션과 의미적으로 일치하는지 판단해주세요.
 
 옵션 종류: {option_type}
 사용자 요청: {user_option}
 제공 옵션: {option_text}
+
+**중요**: 옵션명뿐만 아니라 설명도 함께 고려해서 의미적으로 매칭해주세요.
 
 다음 JSON 형식으로 응답해주세요:
 {{
@@ -473,17 +479,19 @@ class OneQScoreCalculator:
 }}
 
 예시:
-- 사용자: "무광", 제공: "UV(+3000원), 매트(+3000원)" → {{"match": true, "reason": "매트는 무광과 동일한 의미"}}
-- 사용자: "일반지", 제공: "프리미엄 코트지(+0원), 스노우 매트(+1500원)" → {{"match": true, "reason": "프리미엄 코트지는 일반지의 고급 버전"}}
+- 사용자: "무광", 제공: "매트(+3000원): 지문 억제, 반사 방지" → {{"match": true, "reason": "매트의 '지문 억제, 반사 방지' 설명이 무광의 특성과 일치"}}
+- 사용자: "일반지", 제공: "프리미엄 코트지(+0원): 선명한 컬러, 기본 용지" → {{"match": true, "reason": "프리미엄 코트지의 '기본 용지' 설명이 일반지와 동일한 의미"}}
+- 사용자: "고급지", 제공: "스노우 매트(+1500원): 지문 억제, 고급스러운 질감" → {{"match": true, "reason": "스노우 매트의 '고급스러운 질감' 설명이 고급지와 일치"}}
 
 주의사항:
-1. 유사한 의미의 옵션도 매칭으로 인정
-2. 가격 정보는 무시하고 옵션명만 비교
-3. true/false만 반환
+1. 옵션명과 설명을 모두 고려해서 의미적으로 매칭
+2. 가격 정보는 무시하고 옵션의 특성과 설명만 비교
+3. 유사한 기능이나 특성을 가진 옵션도 매칭으로 인정
+4. true/false만 반환
 """
 
             print(f"🤖 OpenAI API 호출 중...")
-            response = openai.ChatCompletion.create(
+            response = openai.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
                     {"role": "system", "content": "당신은 인쇄 옵션 매칭 전문가입니다."},
