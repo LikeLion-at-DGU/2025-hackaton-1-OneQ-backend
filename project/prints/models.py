@@ -2,6 +2,7 @@
 from django.db import models
 from django.contrib.auth.models import User
 import uuid
+from django.contrib.auth.hashers import make_password, identify_hasher
 
 # verbose_name은 admin에서 볼 때 보여지는 이름
 class ChatSession(models.Model):
@@ -85,17 +86,28 @@ class PrintShop(models.Model):
     business_license = models.FileField(upload_to='business_licenses/', blank=True, verbose_name="사업자등록증")
     password = models.CharField(max_length=128, blank=True, verbose_name="수정 비밀번호")
     
+    # === 자동 해시 로직 추가 ===
+    def save(self, *args, **kwargs):
+        if self.password:
+            try:
+                # 이미 해시된 값이면 identify_hasher 가 통과 → 그대로 둠
+                identify_hasher(self.password)
+            except Exception:
+                # 평문이면 해시로 변환
+                self.password = make_password(self.password)
+        super().save(*args, **kwargs)
+
     # === 등록 상태 관리 ===
     temp_step1_data = models.JSONField(default=dict, blank=True, verbose_name="1단계 임시 데이터") # 1단계에서 입력한 기본 정보 임시 저장
     temp_step2_data = models.JSONField(default=dict, blank=True, verbose_name="2단계 임시 데이터") # 1단계 + 2단계 데이터를 합쳐서 임시 저장장
     registration_status = models.CharField(max_length=20, default='step1', verbose_name="등록 단계",
-                                         choices=[
-                                             ('step1', '1단계: 기본 정보'), # 1단계 완료
-                                             ('step2', '2단계: 상세 정보'), # 2단계 완료
-                                             ('pending', '심의 대기'), # 사업자등록증 심의 대기
-                                             ('completed', '등록 완료'), # 3단계 완료
-                                             ('rejected', '등록 거부') # 등록 거부
-                                         ]) # 현재 등록 진행 상황 추적
+                                        choices=[
+                                            ('step1', '1단계: 기본 정보'), # 1단계 완료
+                                            ('step2', '2단계: 상세 정보'), # 2단계 완료
+                                            ('pending', '심의 대기'), # 사업자등록증 심의 대기
+                                            ('completed', '등록 완료'), # 3단계 완료
+                                            ('rejected', '등록 거부') # 등록 거부
+                                        ]) # 현재 등록 진행 상황 추적
     
     # === 상태 관리 ===
     is_verified = models.BooleanField(default=False, verbose_name="인증 완료") # 사업자등록증 인증 완료 여부
