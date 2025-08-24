@@ -22,12 +22,12 @@ import re
 
 # ===== 유틸리티 함수 =====
 
-def extract_quote_info(message: str) -> dict:
-    """AI 응답에서 견적서 정보를 추출"""
+def extract_quote_info(message: str, category: str = None) -> dict:
+    """AI 응답에서 견적서 정보를 추출 (카테고리별로 다른 필드 처리)"""
     quote_info = {
         'quote_number': f"ONEQ-{datetime.now().strftime('%Y-%m%d-%H%M')}",
         'creation_date': datetime.now().strftime('%Y년 %m월 %d일'),
-        'category': '',
+        'category': category or '',
         'specifications': {},
         'quantity': '',
         'due_days': '',
@@ -41,33 +41,50 @@ def extract_quote_info(message: str) -> dict:
         for line in lines:
             line = line.strip()
             if line.startswith('-'):
-                # 정보 추출
+                # 공통 필드
                 if '카테고리:' in line:
                     quote_info['category'] = line.split('카테고리:')[1].strip()
+                elif '수량:' in line or '포스터 수량:' in line or '명함 수량:' in line or '배너 수량:' in line or '현수막 수량:' in line:
+                    value = line.split(':', 1)[1].strip() if ':' in line else ''
+                    quote_info['quantity'] = value
+                elif '납기일:' in line or '납기:' in line:
+                    value = line.split(':', 1)[1].strip() if ':' in line else ''
+                    quote_info['due_days'] = value
+                elif '지역:' in line:
+                    value = line.split(':', 1)[1].strip() if ':' in line else ''
+                    quote_info['region'] = value
+                elif '예산:' in line:
+                    value = line.split(':', 1)[1].strip() if ':' in line else ''
+                    quote_info['budget'] = value
+                
+                # 카테고리별 특화 필드
                 elif '용지:' in line or '용지 종류:' in line:
                     value = line.split(':', 1)[1].strip() if ':' in line else ''
                     quote_info['specifications']['paper'] = value
-                elif '사이즈:' in line or '포스터 사이즈:' in line:
+                elif '사이즈:' in line or '포스터 사이즈:' in line or '명함 사이즈:' in line or '배너 사이즈:' in line or '현수막 사이즈:' in line:
                     value = line.split(':', 1)[1].strip() if ':' in line else ''
                     quote_info['specifications']['size'] = value
                 elif '코팅:' in line or '포스터 코팅:' in line:
                     value = line.split(':', 1)[1].strip() if ':' in line else ''
                     quote_info['specifications']['coating'] = value
                 elif '접지:' in line:
-                    quote_info['specifications']['folding'] = line.split('접지:')[1].strip()
-                elif '인쇄:' in line:
-                    quote_info['specifications']['printing'] = line.split('인쇄:')[1].strip()
-                elif '후가공:' in line:
-                    quote_info['specifications']['finishing'] = line.split('후가공:')[1].strip()
-                elif '수량:' in line or '포스터 수량:' in line:
                     value = line.split(':', 1)[1].strip() if ':' in line else ''
-                    quote_info['quantity'] = value
-                elif '납기일:' in line:
-                    quote_info['due_days'] = line.split('납기일:')[1].strip()
-                elif '지역:' in line:
-                    quote_info['region'] = line.split('지역:')[1].strip()
-                elif '예산:' in line:
-                    quote_info['budget'] = line.split('예산:')[1].strip()
+                    quote_info['specifications']['folding'] = value
+                elif '인쇄:' in line or '인쇄 방식:' in line:
+                    value = line.split(':', 1)[1].strip() if ':' in line else ''
+                    quote_info['specifications']['printing'] = value
+                elif '후가공:' in line:
+                    value = line.split(':', 1)[1].strip() if ':' in line else ''
+                    quote_info['specifications']['finishing'] = value
+                elif '거치대:' in line or '배너 거치대:' in line:
+                    value = line.split(':', 1)[1].strip() if ':' in line else ''
+                    quote_info['specifications']['stand'] = value
+                elif '가공:' in line or '현수막 추가 가공:' in line:
+                    value = line.split(':', 1)[1].strip() if ':' in line else ''
+                    quote_info['specifications']['processing'] = value
+                elif '종류:' in line or '스티커 종류:' in line:
+                    value = line.split(':', 1)[1].strip() if ':' in line else ''
+                    quote_info['specifications']['type'] = value
         
         # 견적번호 추출 (=== 최종 견적서 === 섹션에서)
         if '=== 최종 견적서 ===' in message:
@@ -415,10 +432,9 @@ def chatsession_send_message(request, session_id):
     if "=== 최종 견적서 ===" in clean_msg and "요청하신 정보에 맞는 인쇄소를 추천해드리겠습니다" in clean_msg:
         is_final_quote = True
         
-        # 견적 정보 추출
-        quote_info = extract_quote_info(clean_msg)
-        # 카테고리는 세션 슬롯에서 가져오기
-        quote_info['category'] = chat_session.slots.get('category', '')
+        # 견적 정보 추출 (카테고리 정보 전달)
+        category = chat_session.slots.get('category', '')
+        quote_info = extract_quote_info(clean_msg, category)
         
         # 예산 정보가 세션 슬롯에 없으면 AI 응답에서 다시 추출 시도
         if not chat_session.slots.get('budget'):
@@ -451,27 +467,48 @@ def chatsession_send_message(request, session_id):
             shop_info += "이 견적서와 디자인 파일을 가지고 추천 인쇄소에 방문하시면 됩니다.\n\n좋은 하루 되세요! 원하시는 결과물이 나오길 바랍니다! 😊"            
             # AI 응답 업데이트
             chat_session.history[-1]['content'] = clean_msg + shop_info
-            
-            # 추천 인쇄소 데이터 구조화
-            recommended_shops = []
-            for shop in recommended_printshops[:3]:
-                # 세부 점수 정보 추출
-                score_details = shop.get('score_details', {})
-                
-                recommended_shops.append({
-                    'name': shop['name'],
-                    'oneq_score': shop['recommendation_score'],
-                    'price_score': score_details.get('price_score', 0),
-                    'deadline_score': score_details.get('deadline_score', 0),
-                    'workfit_score': score_details.get('workfit_score', 0),
-                    'recommendation_reason': shop['recommendation_reason'],
-                    'phone': shop['phone'],
-                    'address': shop['address'],
-                    'email': shop['email'],
-                    'estimated_price': shop['estimated_total_price'],
-                    'production_period': shop['estimated_production_time'],
-                    'delivery_method': shop['delivery_methods']
-                })
+             
+             # 추천 인쇄소 데이터 구조화
+             recommended_shops = []
+             for shop in recommended_printshops[:3]:
+                 # 세부 점수 정보 추출
+                 score_details = shop.get('score_details', {})
+                 
+                 # 디버깅: 세부점수 확인
+                 print(f"=== 인쇄소 {shop['name']} 세부점수 디버깅 ===")
+                 print(f"전체 score_details: {score_details}")
+                 print(f"price_score: {score_details.get('price_score', 0)}")
+                 print(f"deadline_score: {score_details.get('deadline_score', 0)}")
+                 print(f"workfit_score: {score_details.get('workfit_score', 0)}")
+                 print(f"전체 shop 데이터: {shop}")
+                 
+                 # 세부점수 상세 정보 추출
+                 price_details = score_details.get('details', {}).get('price_details', {})
+                 deadline_details = score_details.get('details', {}).get('deadline_details', {})
+                 workfit_details = score_details.get('details', {}).get('workfit_details', {})
+                 
+                 recommended_shops.append({
+                     'name': shop['name'],
+                     'oneq_score': shop['recommendation_score'],
+                     'price_score': score_details.get('price_score', 0),
+                     'deadline_score': score_details.get('deadline_score', 0),
+                     'workfit_score': score_details.get('workfit_score', 0),
+                     'recommendation_reason': shop['recommendation_reason'],
+                     'phone': shop['phone'],
+                     'address': shop['address'],
+                     'email': shop['email'],
+                     'estimated_price': shop['estimated_total_price'],
+                     'production_period': shop['estimated_production_time'],
+                     'delivery_method': shop['delivery_methods'],
+                     'score_details': {
+                         'price_score': score_details.get('price_score', 0),
+                         'deadline_score': score_details.get('deadline_score', 0),
+                         'workfit_score': score_details.get('workfit_score', 0),
+                         'price_details': price_details,
+                         'deadline_details': deadline_details,
+                         'workfit_details': workfit_details
+                     }
+                 })
         else:
             # 추천 인쇄소가 없는 경우
             no_shop_msg = "\n\n😔 죄송합니다. 현재 요청하신 조건에 맞는 인쇄소가 없습니다.\n다른 조건으로 다시 시도해보시거나, 나중에 다시 문의해주세요."
@@ -493,21 +530,55 @@ def chatsession_send_message(request, session_id):
         print(f"견적 정보 예산: {quote_budget}")
         print(f"전체 세션 슬롯: {chat_session.slots}")
         
-        # 견적 정보에서 필요한 모든 필드 추출
+        # 카테고리별로 다른 필드 구성
+        category = chat_session.slots.get('category', '')
         final_quote_data = {
             'quote_number': quote_info.get('quote_number', f"ONEQ-{datetime.now().strftime('%Y-%m%d-%H%M')}"),
             'creation_date': quote_info.get('creation_date', datetime.now().strftime('%Y년 %m월 %d일')),
-            'category': quote_info.get('category', chat_session.slots.get('category', '')),
+            'category': category,
             'quantity': quote_info.get('quantity', chat_session.slots.get('quantity', '')),
-            'size': quote_info.get('specifications', {}).get('size', chat_session.slots.get('size', '')),
-            'paper': quote_info.get('specifications', {}).get('paper', chat_session.slots.get('paper', '')),
-            'coating': quote_info.get('specifications', {}).get('coating', chat_session.slots.get('coating', '')),
             'due_days': quote_info.get('due_days', chat_session.slots.get('due_days', '')),
             'budget': chat_session.slots.get('budget', quote_info.get('budget', '')),
             'region': quote_info.get('region', chat_session.slots.get('region', '')),
             'available_printshops': len(recommended_shops) if recommended_shops else 0,
             'price_range': get_price_range(recommended_shops) if recommended_shops else '정보 없음'
         }
+        
+        # 카테고리별 특화 필드 추가
+        if category == '명함':
+            final_quote_data.update({
+                'size': quote_info.get('specifications', {}).get('size', chat_session.slots.get('size', '')),
+                'paper': quote_info.get('specifications', {}).get('paper', chat_session.slots.get('paper', '')),
+                'printing': quote_info.get('specifications', {}).get('printing', chat_session.slots.get('printing', '')),
+                'finishing': quote_info.get('specifications', {}).get('finishing', chat_session.slots.get('finishing', ''))
+            })
+        elif category == '포스터':
+            final_quote_data.update({
+                'size': quote_info.get('specifications', {}).get('size', chat_session.slots.get('size', '')),
+                'paper': quote_info.get('specifications', {}).get('paper', chat_session.slots.get('paper', '')),
+                'coating': quote_info.get('specifications', {}).get('coating', chat_session.slots.get('coating', ''))
+            })
+        elif category == '브로슈어':
+            final_quote_data.update({
+                'size': quote_info.get('specifications', {}).get('size', chat_session.slots.get('size', '')),
+                'paper': quote_info.get('specifications', {}).get('paper', chat_session.slots.get('paper', '')),
+                'folding': quote_info.get('specifications', {}).get('folding', chat_session.slots.get('folding', ''))
+            })
+        elif category == '배너':
+            final_quote_data.update({
+                'size': quote_info.get('specifications', {}).get('size', chat_session.slots.get('size', '')),
+                'stand': quote_info.get('specifications', {}).get('stand', chat_session.slots.get('stand', ''))
+            })
+        elif category == '현수막':
+            final_quote_data.update({
+                'size': quote_info.get('specifications', {}).get('size', chat_session.slots.get('size', '')),
+                'processing': quote_info.get('specifications', {}).get('processing', chat_session.slots.get('processing', ''))
+            })
+        elif category == '스티커':
+            final_quote_data.update({
+                'size': quote_info.get('specifications', {}).get('size', chat_session.slots.get('size', '')),
+                'type': quote_info.get('specifications', {}).get('type', chat_session.slots.get('type', ''))
+            })
         
         response_data.update({
             'is_final_quote': True,
@@ -783,7 +854,8 @@ def get_price_range(recommended_shops):
         # 예상 가격에서 숫자만 추출
         prices = []
         for shop in recommended_shops:
-            estimated_price = shop.get('estimated_price', '')
+            # estimated_total_price 필드 사용
+            estimated_price = shop.get('estimated_total_price', shop.get('estimated_price', ''))
             if estimated_price:
                 # "30만원" -> 300000
                 price_str = str(estimated_price).replace('만원', '').replace(',', '').strip()
