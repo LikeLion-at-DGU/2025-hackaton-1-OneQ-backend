@@ -583,7 +583,8 @@ def chatsession_send_message(request, session_id):
             'is_final_quote': True,
             'quote_info': quote_info,
             'recommended_shops': recommended_shops,
-            'final_quote_data': final_quote_data
+            'final_quote_data': final_quote_data,
+            'collected_slots': chat_session.slots  # 수집된 모든 슬롯 정보 추가
         })
     else:
         response_data.update({
