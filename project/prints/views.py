@@ -290,8 +290,11 @@ def chatsession_send_message(request, session_id):
         "content": user_message
     })
     
+    # 지역 정보 추출 (기존 슬롯에서)
+    region = chat_session.slots.get('region', '')
+    
     # AI 응답 생성 (대화 히스토리와 카테고리별 전문 프롬프트 사용)
-    ai_response = ai_client.chat_with_history(conversation_history, category=category)
+    ai_response = ai_client.chat_with_history(conversation_history, category=category, region=region)
     print(f"AI 응답: {ai_response}")
     
     # AI 응답에서 메시지 추출
@@ -302,7 +305,7 @@ def chatsession_send_message(request, session_id):
     
     # 정보 추출 시도 (사용자 메시지에서 슬롯 정보 추출)
     try:
-        extracted_info = ai_client.extract_info(user_message, category)
+        extracted_info = ai_client.extract_info(user_message, category, region)
         print(f"추출된 정보: {extracted_info}")
         
         if extracted_info and 'filled_slots' in extracted_info and extracted_info['filled_slots']:
@@ -548,11 +551,15 @@ def get_recommended_printshops(slots):
                 filtered_printshops.append(shop)
         printshops = filtered_printshops
     
-    # 지역 필터링 (부분 일치)
+    # 지역 필터링 (복합 지역 표현 지원)
     if region:
+        from .services.ai_client import AIClient
+        ai_client = AIClient()
+        target_regions = ai_client._parse_region_expression(region)
+        
         filtered_printshops = []
         for shop in printshops:
-            if region in shop.address:
+            if ai_client._match_regions_in_address(target_regions, shop.address):
                 filtered_printshops.append(shop)
         printshops = filtered_printshops
     
