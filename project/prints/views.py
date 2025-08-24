@@ -14,6 +14,7 @@ from .serializers import (
     PrintShopStep1Serializer, PrintShopStep2Serializer, PrintShopFinalizeSerializer
 )
 from .services.ai_client import AIClient
+from .services.oneq_score import calculate_printshop_scores
 from datetime import datetime
 import uuid
 from rest_framework.views import APIView
@@ -323,6 +324,33 @@ def chatsession_send_message(request, session_id):
         'timestamp': datetime.now().isoformat()
     })
     
+    # 최종 견적서가 생성되었는지 확인하고 인쇄소 추천 추가
+    if "=== 최종 견적서 ===" in clean_msg and "요청하신 정보에 맞는 인쇄소를 추천해드리겠습니다" in clean_msg:
+        recommended_printshops = get_recommended_printshops(chat_session.slots)
+        
+        if recommended_printshops:
+            # 추천 인쇄소 정보를 AI 응답에 추가
+            shop_info = "\n\n🏆 추천 인쇄소 Top3:\n"
+            for i, shop in enumerate(recommended_printshops[:3], 1):
+                shop_info += f"{i}. {shop['name']}\n"
+                shop_info += f"   📊 원큐스코어: {shop['recommendation_score']}점\n"
+                shop_info += f"   💡 추천이유: {shop['recommendation_reason']}\n"
+                shop_info += f"   📞 연락처: {shop['phone']}\n"
+                shop_info += f"   📍 주소: {shop['address']}\n"
+                shop_info += f"   📧 이메일: {shop['email']}\n"
+                shop_info += f"   💰 예상가격: {shop['estimated_total_price']}\n"
+                shop_info += f"   ⏰ 제작기간: {shop['estimated_production_time']}\n"
+                shop_info += f"   🚚 배송방법: {shop['delivery_methods']}\n\n"
+            
+            shop_info += "이 견적서와 디자인 파일을 가지고 추천 인쇄소에 방문하시면 됩니다.\n\n좋은 하루 되세요! 원하시는 결과물이 나오길 바랍니다! 😊"
+            
+            # AI 응답 업데이트
+            chat_session.history[-1]['content'] = clean_msg + shop_info
+        else:
+            # 추천 인쇄소가 없는 경우
+            no_shop_msg = "\n\n😔 죄송합니다. 현재 요청하신 조건에 맞는 인쇄소가 없습니다.\n다른 조건으로 다시 시도해보시거나, 나중에 다시 문의해주세요."
+            chat_session.history[-1]['content'] = clean_msg + no_shop_msg
+    
     chat_session.save()
     serializer = ChatSessionSerializer(chat_session)
     return Response(serializer.data)
@@ -458,17 +486,19 @@ def chat_quote(request):
             'missing_slots': missing_slots
         }, status=400)
     
-    # 간단한 견적 생성 (임시)
+    # 견적 데이터 구조화
     category = chat_session.slots.get('category')
     
-    # 견적 데이터 구조화 (임시)
+    # DB에서 인쇄소 추천
+    recommended_printshops = get_recommended_printshops(chat_session.slots)
+    
     final_quote = {
         'quote_number': f"ONEQ-{datetime.now().strftime('%Y-%m%d-%H%M')}",
         'created_date': datetime.now().strftime('%Y년 %m월 %d일'),
         'category': category,
         'slots': chat_session.slots,
-        'recommendations': [],
-        'total_available': 0,
+        'recommendations': recommended_printshops,
+        'total_available': len(recommended_printshops),
         'message': f'{category} 제작 견적이 준비되었습니다.'
     }
     
@@ -477,3 +507,78 @@ def chat_quote(request):
         'final_quote': final_quote,
         'message': '모든 정보가 수집되었습니다. 최종 견적을 확인해 주세요.'
     })
+
+def get_recommended_printshops(slots):
+    """사용자 요구사항에 맞는 인쇄소 추천"""
+    category = slots.get('category')
+    region = slots.get('region', '')
+    budget = slots.get('budget', '')
+    
+    # 기본 필터링: 활성화된 인쇄소만
+    printshops = PrintShop.objects.filter(
+        is_active=True,
+        registration_status='completed'
+    )
+    
+    # 카테고리 필터링
+    if category:
+        category_mapping = {
+            '명함': 'card',
+            '배너': 'banner', 
+            '포스터': 'poster',
+            '스티커': 'sticker',
+            '현수막': 'banner2',
+            '브로슈어': 'brochure'
+        }
+        eng_category = category_mapping.get(category, category)
+        
+        # available_categories에 해당 카테고리가 포함된 인쇄소만 필터링
+        printshops = printshops.filter(
+            available_categories__contains=[eng_category]
+        )
+    
+    # 지역 필터링 (부분 일치)
+    if region:
+        printshops = printshops.filter(address__icontains=region)
+    
+    # 예산 필터링 (간단한 텍스트 매칭)
+    if budget:
+        # 예산 범위 파싱 (예: "25~35만원" -> 250000~350000)
+        budget_range = parse_budget_range(budget)
+        if budget_range:
+            min_budget, max_budget = budget_range
+            # 예산 정보가 있는 인쇄소만 필터링 (실제 구현에서는 더 정교한 로직 필요)
+            pass
+    
+    # 상위 10개 후보 선정 (원큐스코어 계산을 위해)
+    candidates = list(printshops.order_by('-created_at')[:10])
+    
+    # 원큐스코어 계산
+    scored_printshops = calculate_printshop_scores(candidates, slots)
+    
+    # 상위 3개 반환
+    return scored_printshops[:3]
+
+def parse_budget_range(budget_str):
+    """예산 문자열을 범위로 파싱"""
+    try:
+        # "25~35만원" -> (250000, 350000)
+        if '~' in budget_str:
+            parts = budget_str.split('~')
+            min_val = int(parts[0].replace('만원', '').strip()) * 10000
+            max_val = int(parts[1].replace('만원', '').strip()) * 10000
+            return (min_val, max_val)
+        # "30만원 이하" -> (0, 300000)
+        elif '이하' in budget_str:
+            val = int(budget_str.replace('만원 이하', '').strip()) * 10000
+            return (0, val)
+        # "50만원 이상" -> (500000, float('inf'))
+        elif '이상' in budget_str:
+            val = int(budget_str.replace('만원 이상', '').strip()) * 10000
+            return (val, float('inf'))
+        # 단일 값 "30만원" -> (250000, 350000) (근사치)
+        else:
+            val = int(budget_str.replace('만원', '').strip()) * 10000
+            return (val * 0.8, val * 1.2)
+    except:
+        return None
