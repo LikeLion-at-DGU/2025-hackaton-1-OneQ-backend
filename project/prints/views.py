@@ -36,43 +36,38 @@ def extract_quote_info(message: str) -> dict:
     }
     
     try:
-        # 카테고리 추출
-        if '📋 요청 정보:' in message:
-            # 요청 정보 섹션 찾기
-            start_idx = message.find('📋 요청 정보:')
-            end_idx = message.find('견적서가 완성되었습니다!')
-            
-            if start_idx != -1 and end_idx != -1:
-                info_section = message[start_idx:end_idx]
-                
-                # 각 줄을 파싱
-                lines = info_section.split('\n')
-                for line in lines:
-                    line = line.strip()
-                    if line.startswith('-'):
-                        # 정보 추출
-                        if '카테고리:' in line:
-                            quote_info['category'] = line.split('카테고리:')[1].strip()
-                        elif '용지:' in line:
-                            quote_info['specifications']['paper'] = line.split('용지:')[1].strip()
-                        elif '사이즈:' in line:
-                            quote_info['specifications']['size'] = line.split('사이즈:')[1].strip()
-                        elif '코팅:' in line:
-                            quote_info['specifications']['coating'] = line.split('코팅:')[1].strip()
-                        elif '접지:' in line:
-                            quote_info['specifications']['folding'] = line.split('접지:')[1].strip()
-                        elif '인쇄:' in line:
-                            quote_info['specifications']['printing'] = line.split('인쇄:')[1].strip()
-                        elif '후가공:' in line:
-                            quote_info['specifications']['finishing'] = line.split('후가공:')[1].strip()
-                        elif '수량:' in line:
-                            quote_info['quantity'] = line.split('수량:')[1].strip()
-                        elif '납기일:' in line:
-                            quote_info['due_days'] = line.split('납기일:')[1].strip()
-                        elif '지역:' in line:
-                            quote_info['region'] = line.split('지역:')[1].strip()
-                        elif '예산:' in line:
-                            quote_info['budget'] = line.split('예산:')[1].strip()
+        # 정보 추출 - 여러 형식 지원
+        lines = message.split('\n')
+        for line in lines:
+            line = line.strip()
+            if line.startswith('-'):
+                # 정보 추출
+                if '카테고리:' in line:
+                    quote_info['category'] = line.split('카테고리:')[1].strip()
+                elif '용지:' in line or '용지 종류:' in line:
+                    value = line.split(':', 1)[1].strip() if ':' in line else ''
+                    quote_info['specifications']['paper'] = value
+                elif '사이즈:' in line or '포스터 사이즈:' in line:
+                    value = line.split(':', 1)[1].strip() if ':' in line else ''
+                    quote_info['specifications']['size'] = value
+                elif '코팅:' in line or '포스터 코팅:' in line:
+                    value = line.split(':', 1)[1].strip() if ':' in line else ''
+                    quote_info['specifications']['coating'] = value
+                elif '접지:' in line:
+                    quote_info['specifications']['folding'] = line.split('접지:')[1].strip()
+                elif '인쇄:' in line:
+                    quote_info['specifications']['printing'] = line.split('인쇄:')[1].strip()
+                elif '후가공:' in line:
+                    quote_info['specifications']['finishing'] = line.split('후가공:')[1].strip()
+                elif '수량:' in line or '포스터 수량:' in line:
+                    value = line.split(':', 1)[1].strip() if ':' in line else ''
+                    quote_info['quantity'] = value
+                elif '납기일:' in line:
+                    quote_info['due_days'] = line.split('납기일:')[1].strip()
+                elif '지역:' in line:
+                    quote_info['region'] = line.split('지역:')[1].strip()
+                elif '예산:' in line:
+                    quote_info['budget'] = line.split('예산:')[1].strip()
         
         # 견적번호 추출 (=== 최종 견적서 === 섹션에서)
         if '=== 최종 견적서 ===' in message:
@@ -410,6 +405,19 @@ def chatsession_send_message(request, session_id):
         
         # 견적 정보 추출
         quote_info = extract_quote_info(clean_msg)
+        # 카테고리는 세션 슬롯에서 가져오기
+        quote_info['category'] = chat_session.slots.get('category', '')
+        
+        # 예산 정보가 세션 슬롯에 없으면 AI 응답에서 다시 추출 시도
+        if not chat_session.slots.get('budget'):
+            print("세션 슬롯에 예산 정보가 없어서 AI 응답에서 재추출 시도")
+            # AI 응답에서 예산 정보 찾기
+            budget_match = re.search(r'예산:\s*([^\n]+)', clean_msg)
+            if budget_match:
+                extracted_budget = budget_match.group(1).strip()
+                chat_session.slots['budget'] = extracted_budget
+                print(f"AI 응답에서 추출한 예산: {extracted_budget}")
+                chat_session.save()
         
         # 추천 인쇄소 가져오기
         recommended_printshops = get_recommended_printshops(chat_session.slots)
@@ -465,6 +473,14 @@ def chatsession_send_message(request, session_id):
     
     # 최종 견적인 경우 추가 데이터 포함
     if is_final_quote:
+        # 디버깅: 예산 정보 확인
+        session_budget = chat_session.slots.get('budget', '')
+        quote_budget = quote_info.get('budget', '')
+        print(f"=== 예산 정보 디버깅 ===")
+        print(f"세션 슬롯 예산: {session_budget}")
+        print(f"견적 정보 예산: {quote_budget}")
+        print(f"전체 세션 슬롯: {chat_session.slots}")
+        
         # 견적 정보에서 필요한 모든 필드 추출
         final_quote_data = {
             'quote_number': quote_info.get('quote_number', f"ONEQ-{datetime.now().strftime('%Y-%m%d-%H%M')}"),
@@ -475,7 +491,7 @@ def chatsession_send_message(request, session_id):
             'paper': quote_info.get('specifications', {}).get('paper', chat_session.slots.get('paper', '')),
             'coating': quote_info.get('specifications', {}).get('coating', chat_session.slots.get('coating', '')),
             'due_days': quote_info.get('due_days', chat_session.slots.get('due_days', '')),
-            'budget': quote_info.get('budget', chat_session.slots.get('budget', '')),
+            'budget': chat_session.slots.get('budget', quote_info.get('budget', '')),
             'region': quote_info.get('region', chat_session.slots.get('region', '')),
             'available_printshops': len(recommended_shops) if recommended_shops else 0,
             'price_range': get_price_range(recommended_shops) if recommended_shops else '정보 없음'
