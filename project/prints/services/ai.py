@@ -139,63 +139,104 @@ class PrintShopAIService:
         print(f"=== AI 서비스 초기화 완료 ===")
     
     def _get_printshops_by_category(self, category: str) -> List[PrintShop]:
-        """카테고리별 인쇄소 조회"""
-        print(f"=== 인쇄소 조회 디버깅 시작 ===")
+        """카테고리에 맞는 인쇄소만 필터링(한글/영문 동시 지원 + 공백/형태 보정)"""
+        print("=== 인쇄소 조회 디버깅 시작 ===")
         print(f"요청된 카테고리: {category}")
         print(f"카테고리 타입: {type(category)}")
-        
-        # 카테고리 매핑 (한글 → 영어)
+
+        if not category:
+            print("카테고리 없음 - 빈 목록 반환")
+            return []
+
+        # 1) 표준 매핑 + 별칭 집합(영/한글 동시 허용)
         category_mapping = {
-            '명함': 'card',
-            '배너': 'banner', 
-            '포스터': 'poster',
-            '스티커': 'sticker',
-            '현수막': 'banner2',
-            '브로슈어': 'brochure'
+            "명함": "card",
+            "배너": "banner",
+            "포스터": "poster",
+            "스티커": "sticker",
+            "현수막": "banner2",
+            "브로슈어": "brochure",
         }
-        
-        # 한글 카테고리를 영어로 변환
-        english_category = category_mapping.get(category, category)
-        print(f"영어 카테고리로 변환: {category} → {english_category}")
-        
-        # 모든 활성화된 인쇄소 조회
+        aliases = {
+            "명함": {"명함", "card", "business_card"},
+            "배너": {"배너", "banner", "rollup"},
+            "포스터": {"포스터", "poster"},
+            "스티커": {"스티커", "sticker", "label"},
+            "현수막": {"현수막", "banner2", "banner", "largebanner", "large_banner"},
+            "브로슈어": {"브로슈어", "brochure", "leaflet", "pamphlet"},
+        }
+
+        # 2) 정규화 함수: 모든 공백 제거 + 소문자
+        def _norm(s):
+            if s is None:
+                return ""
+            s = str(s)
+            s = "".join(s.split())  # 모든 공백(스페이스/개행/탭) 제거 → "포스 터" → "포스터"
+            return s.lower()
+
+        kor_cat = str(category).strip()
+        eng_cat = category_mapping.get(kor_cat)
+        target_set = set()
+        target_set.add(_norm(kor_cat))
+        if eng_cat:
+            target_set.add(_norm(eng_cat))
+        # 별칭 병합
+        for alias in aliases.get(kor_cat, set()):
+            target_set.add(_norm(alias))
+
+        print(f"정규화된 타겟 토큰: {sorted(list(target_set))}")
+
+        # 3) 활성/등록완료 인쇄소 조회
         all_printshops = PrintShop.objects.filter(
             is_active=True,
-            registration_status='completed'
+            registration_status="completed",
         )
         print(f"활성화된 인쇄소 수: {all_printshops.count()}")
-        
-        # 모든 인쇄소 상태 출력
-        for shop in all_printshops:
-            print(f"인쇄소: {shop.name}")
-            print(f"  - is_active: {shop.is_active}")
-            print(f"  - registration_status: {shop.registration_status}")
-            print(f"  - available_categories: {shop.available_categories}")
-            print(f"  - available_categories 타입: {type(shop.available_categories)}")
-        
-        # 해당 카테고리를 지원하는 인쇄소만 필터링
+
         filtered_printshops = []
-        for printshop in all_printshops:
-            print(f"\n인쇄소 확인: {printshop.name}")
-            print(f"  - 카테고리: {printshop.available_categories}")
-            
-            # available_categories가 None이거나 빈 리스트인 경우 처리
-            available_cats = printshop.available_categories or []
-            if not isinstance(available_cats, list):
-                available_cats = []
-                print(f"  - available_cats 변환: {available_cats}")
-            
-            print(f"  - 찾는 카테고리: {english_category}")
-            print(f"  - 포함 여부: {english_category in available_cats}")
-            
-            if english_category in available_cats:
-                filtered_printshops.append(printshop)
-                print(f"  ✓ {printshop.name} 추가됨")
+
+        import json as _json
+
+        for shop in all_printshops:
+            raw = shop.available_categories or []
+            # 문자열로 저장된 경우 처리
+            if isinstance(raw, str):
+                raw_str = raw.strip()
+                parsed = None
+                # JSON 리스트 문자열 시도: '["포스터","배너"]'
+                if (raw_str.startswith("[") and raw_str.endswith("]")) or (raw_str.startswith('"') and raw_str.endswith('"')):
+                    try:
+                        parsed = _json.loads(raw_str)
+                    except Exception:
+                        parsed = None
+                if parsed is None:
+                    # 콤마 구분 문자열 시도: "포스터, 배너"
+                    parsed = [p.strip() for p in raw_str.split(",") if p.strip()]
+                available = parsed
+            elif isinstance(raw, list):
+                available = raw
             else:
-                print(f"  ✗ {printshop.name} 제외됨 (카테고리 불일치: {english_category} not in {available_cats})")
-        
+                available = []
+
+            # 항목 정규화
+            avail_norm = {_norm(x) for x in available if x}
+
+            # 매칭 여부
+            ok = bool(target_set & avail_norm)
+
+            print(f"- {shop.name}")
+            print(f"  원본 카테고리: {available}")
+            print(f"  정규화 카테고리: {sorted(list(avail_norm))}")
+            print(f"  매칭 여부: {ok}")
+
+            if ok:
+                filtered_printshops.append(shop)
+
         print(f"\n=== 최종 필터링된 인쇄소 수: {len(filtered_printshops)} ===")
         return filtered_printshops
+
+
+
     
     def _get_category_info(self) -> Dict:
         """카테고리별 정보 수집"""
@@ -719,12 +760,15 @@ DB 정보와 대화 맥락을 바탕으로 자연스럽게 대화하고, 추천 
 
 === 핵심 지시사항 ===
 1. **자연어 이해**: 사용자의 다양한 표현을 자유롭게 이해하세요
-   - "200부 가능해?" → 수량 정보로 인식
-   - "아트지로 할래" → 용지 선택으로 인식
-   - "양면으로" → 인쇄 방식으로 인식
-   - "형압은 뭐야?" → 용어 설명 요청으로 인식
-   - "그거로 할게" → 이전 질문에 대한 긍정적 응답으로 인식
-   - "넵", "네", "좋아" → 확인/동의 응답으로 인식
+    - "200부 가능해?" → 수량 정보로 인식
+    - "아트지로 할래" → 용지 선택으로 인식
+    - "양면으로" → 인쇄 방식으로 인식
+    - "형압은 뭐야?" → 용어 설명 요청으로 인식
+    - "그거로 할게" → 이전 질문에 대한 긍정적 응답으로 인식
+    - "넵", "네", "좋아" → 확인/동의 응답으로 인식
+    - 절대 '모든 정보가 수집되었습니다'라는 문구는 쓰지 마세요. 서버가 판단합니다.
+    - 미싱 슬롯 목록 {missing_slots}가 비어 있지 않다면, '아직 필요한 정보: …' 형태로만 안내하세요.
+
 
 2. **DB 기반 응답**: 위의 DB 정보만을 바탕으로 정확한 정보 제공
 3. **자연스러운 대화**: 친근하고 자연스러운 톤으로 대화
@@ -893,50 +937,39 @@ JSON 형태로 응답해주세요:
         return prompt
     
     def _process_gpt_response(self, response: Dict, current_slots: Dict) -> Dict:
-        """GPT 응답 처리"""
         try:
             print(f"=== GPT 응답 처리 디버깅 시작 ===")
             print(f"GPT 원본 응답: {response}")
             print(f"GPT 응답 타입: {type(response)}")
-            
+
             if 'error' in response:
                 print(f"GPT 오류 발생: {response['error']}")
                 return self._simple_fallback_response("", current_slots)
-            
+
             # 응답이 없거나 잘못된 경우 간단한 폴백
             if 'message' not in response or not response['message']:
                 print("GPT 응답에 메시지가 없음 - 간단한 폴백 처리")
                 return self._simple_fallback_response("", current_slots)
-            
-            # 슬롯 업데이트
+
+            # 슬롯 업데이트 (정규화)
             if 'slots' in response and response['slots']:
                 try:
-                    coerced = _coerce_numbers(response['slots'])  # 숫자/금액/지역 정규화
+                    coerced = _coerce_numbers(response['slots'])
                     current_slots.update(coerced)
                     self.conversation_manager.update_slots(coerced)
-                    # ★ 응답에도 반영하여 뷰에서 세션에 저장될 때 항상 정규화된 값이 쓰이게 함
                     response['slots'] = coerced
                     print(f"슬롯 업데이트(정규화): {coerced}")
                 except Exception as e:
                     print(f"슬롯 업데이트 중 오류: {e}")
-            
-            # 대화 히스토리에 응답 추가 (중복 방지)
-            if 'message' in response:
-                try:
-                    if not self.conversation_manager.conversation_history or \
-                        self.conversation_manager.conversation_history[-1]['content'] != response['message']:
-                        self.conversation_manager.add_message('assistant', response['message'])
-                except Exception as e:
-                    print(f"대화 히스토리 업데이트 중 오류: {e}")
-            
+
             # 견적 완료 시 견적 리포트 생성
             if response.get('action') == 'quote':
                 print("견적 완료 - 견적 리포트 생성 시작")
                 try:
                     quote_result = self.calculate_quote(current_slots)
                     print(f"견적 계산 결과: {quote_result}")
-                    
-                    # 견적 데이터를 구조화된 형태로 추가
+
+                    # 구조화 결과
                     response['quote_data'] = quote_result
                     response['final_quote'] = {
                         'quote_number': f"ONEQ-{datetime.now().strftime('%Y-%m%d-%H%M')}",
@@ -949,19 +982,35 @@ JSON 형태로 응답해주세요:
                         'formatted_message': self._format_final_quote(quote_result),
                         'order_summary': self._create_order_summary(current_slots)
                     }
-                    
-                    # 사용자에게는 간단한 확인 메시지만 전달
-                    response['message'] = "모든 정보가 수집되었습니다. 최종 견적을 확인해 주세요."
+
+                    # 사용자에게 '리포트 본문' 자체를 메시지로 보냄
+                    response['message'] = response['final_quote']['formatted_message']
                     print("견적 리포트 생성 완료")
                 except Exception as e:
                     print(f"견적 리포트 생성 중 오류: {e}")
                     return self._simple_fallback_response("", current_slots)
-            
-            print(f"=== GPT 응답 처리 완료 ===")
+
+            print(f"=== GPT 응답 처리 완료(게이트 전) ===")
+            # 누락 슬롯 게이트(미완료면 자연스럽게 다음 질문으로)
+            response = self._gate_incomplete_slots(response, current_slots)
+
+            # 최종 메시지를 히스토리에 이 시점에 기록 (게이트 반영 후/리포트 반영 후)
+            try:
+                final_msg = response.get('message', '')
+                if final_msg and (
+                    not self.conversation_manager.conversation_history or
+                    self.conversation_manager.conversation_history[-1]['content'] != final_msg
+                ):
+                    self.conversation_manager.add_message('assistant', final_msg)
+            except Exception as e:
+                print(f"대화 히스토리 업데이트 중 오류: {e}")
+
             return response
+
         except Exception as e:
             print(f"GPT 응답 처리 중 오류: {e}")
             return self._simple_fallback_response("", current_slots)
+
     
     def _simple_fallback_response(self, message: str, current_slots: Dict) -> Dict:
         """GPT 실패 시 간단한 기본 응답"""
@@ -1045,6 +1094,9 @@ JSON 형태로 응답해주세요:
     def _format_final_quote(self, quote_result: Dict) -> str:
         """최종 견적 리포트 포맷팅"""
 
+        if not quote_result or 'error' in quote_result:
+            return f"죄송합니다. {quote_result.get('error', '견적 정보를 생성할 수 없습니다.')}"
+    
         # 수집된 정보 요약
         raw_slots = quote_result['slots'] or {}
         slots = {
@@ -1162,7 +1214,42 @@ JSON 형태로 응답해주세요:
         
         return summary
         
-    
+    def _gate_incomplete_slots(self, response: Dict, current_slots: Dict) -> Dict:
+        """
+        GPT 응답 이후, 실제 필수 슬롯 충족 여부를 서버에서 최종 검증/보정하는 게이트.
+        - 미싱 슬롯이 있으면 action을 'ask'로 강제하고, 바로 다음 질문만 메시지로 내려보낸다.
+        - 완료/견적 관련 필드는 제거해, 실수로 최종 단계로 넘어가지 못하게 한다.
+        """
+        effective = dict(current_slots or {})
+        if 'slots' in response and isinstance(response['slots'], dict):
+            effective.update(response['slots'])
+
+        category = effective.get('category', self.category)
+        req = spec.required_slots(category)
+        missing = [k for k in req if not effective.get(k)]
+
+        if missing:
+            response['action'] = 'ask'
+            response['type'] = 'ask'
+
+            nq = spec.next_question(effective)  # {"slot": key, "question": "...", "choices": [...]}
+            question = nq.get('question') or "다음 정보를 알려주세요."
+            choices = nq.get('choices', [])
+
+            # '질문'만 노출
+            response['message'] = question
+            response['question'] = question
+            if choices:
+                response['choices'] = choices
+
+            # 견적 관련 필드 제거
+            for k in ('quote_data', 'final_quote'):
+                response.pop(k, None)
+
+        return response
+
+
+
 
 # 전역 AI 서비스 인스턴스 (카테고리별로 생성)
 _ai_services = {}
@@ -1259,7 +1346,7 @@ def format_shop_recommendation(shop: Dict) -> str:
 💵 총액: {shop.get('total_price', 0):,}원
 ⏰ 제작기간: {shop.get('production_time', '문의')}
 🚚 배송: {shop.get('delivery_options', '문의')}
-⭐ 추천점수: {shop.get('recommendation_score', 0):.1f}점
+⭐ 원큐스코어: {shop.get('recommendation_score', 0):.1f}점
 💡 추천이유: {shop.get('recommendation_reason', '안정적인 서비스')}"""
     except Exception as e:
         print(f"인쇄소 포맷팅 오류: {e}")
