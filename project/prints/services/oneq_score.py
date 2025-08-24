@@ -193,9 +193,15 @@ class OneQScoreCalculator:
         workfit_score = 0.60 * req_fit + 0.25 * opt_fit + 0.15 * preflight
         return workfit_score
     
-    def _parse_price_info(self, printshop: PrintShop, category: str, quantity: int) -> Optional[Dict]:
+    def _parse_price_info(self, printshop: PrintShop, category: str, quantity) -> Optional[Dict]:
         """카테고리별 가격 정보 파싱 (AI + 정규표현식 혼합)"""
         try:
+            # quantity를 정수로 변환
+            if isinstance(quantity, str):
+                quantity = int(quantity)
+            elif not isinstance(quantity, int):
+                quantity = int(quantity)
+            
             print(f"🔍 가격 파싱 시작: {category}, 수량: {quantity}")
             
             # 카테고리별 가격 정보 필드 매핑
@@ -276,9 +282,15 @@ class OneQScoreCalculator:
             traceback.print_exc()
             return None
     
-    def _ai_parse_prices(self, price_text: str, category: str, quantity: int) -> Optional[Dict]:
+    def _ai_parse_prices(self, price_text: str, category: str, quantity) -> Optional[Dict]:
         """AI를 사용한 가격 정보 파싱"""
         try:
+            # quantity를 정수로 변환
+            if isinstance(quantity, str):
+                quantity = int(quantity)
+            elif not isinstance(quantity, int):
+                quantity = int(quantity)
+            
             print(f"🔍 AI 파싱 시작: {category}, 수량: {quantity}")
             print(f"📝 원본 텍스트: {price_text}")
             
@@ -560,6 +572,16 @@ class OneQScoreCalculator:
         """가격 상세 정보"""
         category = user_requirements.get('category', '')
         quantity = user_requirements.get('quantity', 0)
+        
+        # quantity를 정수로 변환
+        try:
+            if isinstance(quantity, str):
+                quantity = int(quantity.replace('부', '').replace('개', '').strip())
+            else:
+                quantity = int(quantity)
+        except (ValueError, TypeError):
+            quantity = 100  # 기본값
+        
         price_info = self._parse_price_info(printshop, category, quantity)
         
         return {
