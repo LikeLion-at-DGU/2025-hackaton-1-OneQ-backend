@@ -42,10 +42,10 @@ class OneQScoreCalculator:
             )
             
             return {
-                'oneq_score': round(oneq_score, 1),
-                'price_score': round(price_score, 1),
-                'deadline_score': round(deadline_score, 1),
-                'workfit_score': round(workfit_score, 1),
+                'oneq_score': int(round(oneq_score)),
+                'price_score': int(round(price_score)),
+                'deadline_score': int(round(deadline_score)),
+                'workfit_score': int(round(workfit_score)),
                 'recommendation_reason': recommendation_reason,
                 'details': {
                     'price_details': self._get_price_details(printshop, user_requirements),
@@ -83,7 +83,7 @@ class OneQScoreCalculator:
         # 카테고리별 가격 정보 파싱
         price_info = self._parse_price_info(printshop, category, quantity)
         if not price_info:
-            return 50.0  # 기본값
+            return 50  # 기본값
         
         # 후보 인쇄소들의 가격 목록 (임시로 현재 인쇄소만 사용)
         prices = [price_info['unit_price']]
@@ -95,7 +95,7 @@ class OneQScoreCalculator:
         min_ratio = 100 * max(0, min(1, p_min / p_i)) if p_i > 0 else 0
         
         # 2. 예산 적합 (25%)
-        budget_fit = 50.0  # 기본값
+        budget_fit = 50  # 기본값
         if budget and self._parse_budget(budget):
             user_budget = self._parse_budget(budget)
             if user_budget:
@@ -104,7 +104,7 @@ class OneQScoreCalculator:
                 budget_fit = max(0, min(100, budget_fit))
         
         # 3. 시장 합리성 (25%)
-        market_fit = 50.0  # 기본값
+        market_fit = 50  # 기본값
         if len(prices) > 1:
             alpha = 0.30
             market_fit = 100 * (1 - abs(p_i - p_med) / (alpha * p_med))
@@ -115,7 +115,7 @@ class OneQScoreCalculator:
         
         # 최종 가격 점수
         price_score = 0.50 * min_ratio + 0.25 * budget_fit + 0.25 * market_fit
-        return price_score
+        return int(round(price_score))
     
     def _calculate_deadline_score(self, printshop: PrintShop, user_requirements: Dict) -> float:
         """납기 충족도 계산 (Deadline_i, 30%)"""
@@ -132,7 +132,7 @@ class OneQScoreCalculator:
             due_days = 7  # 기본값
         
         if not due_days:
-            return 50.0
+            return 50
         
         # 리드타임 계산
         production_time = self._parse_production_time(printshop.production_time)
@@ -174,7 +174,7 @@ class OneQScoreCalculator:
         
         # 최종 납기 점수
         deadline_score = 0.60 * F + 0.25 * Buffer + 0.15 * R
-        return deadline_score
+        return int(round(deadline_score))
     
     def _calculate_workfit_score(self, printshop: PrintShop, user_requirements: Dict) -> float:
         """작업 적합도 계산 (WorkFit_i, 30%)"""
@@ -187,11 +187,11 @@ class OneQScoreCalculator:
         opt_fit = self._calculate_option_fit(printshop, user_requirements)
         
         # 3. 파일 체크 Preflight (15%)
-        preflight = 85.0  # 기본값 (임시)
+        preflight = 85  # 기본값 (임시)
         
         # 최종 작업 적합도 점수
         workfit_score = 0.60 * req_fit + 0.25 * opt_fit + 0.15 * preflight
-        return workfit_score
+        return int(round(workfit_score))
     
     def _parse_price_info(self, printshop: PrintShop, category: str, quantity) -> Optional[Dict]:
         """카테고리별 가격 정보 파싱 (AI + 정규표현식 혼합)"""
@@ -457,7 +457,7 @@ class OneQScoreCalculator:
                             print(f"AI 옵션 매칭 실패: {ai_error}")
         
         if total_options == 0:
-            return 85.0  # 기본값
+            return 85  # 기본값
         
         return (option_matches / total_options) * 100.0
     
@@ -617,7 +617,7 @@ def calculate_printshop_scores(printshops: List[PrintShop], user_requirements: D
             print(f"인쇄소 {printshop.name} 점수 계산 오류: {e}")
             # 기본 점수로 계속 진행
             score_result = {
-                'oneq_score': 50.0,
+                'oneq_score': 50,
                 'recommendation_reason': '기본 점수',
                 'details': {'price_details': {'total_price': 0}}
             }
