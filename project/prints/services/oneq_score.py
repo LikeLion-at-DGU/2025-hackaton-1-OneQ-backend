@@ -374,7 +374,8 @@ class OneQScoreCalculator:
                 return int(budget_str.replace('만원 이상', '').strip()) * 10000
             else:
                 return int(budget_str.replace('만원', '').strip()) * 10000
-        except:
+        except Exception as e:
+            print(f"예산 파싱 오류: {e}")
             return None
     
     def _parse_production_time(self, production_time: str) -> float:
@@ -390,7 +391,8 @@ class OneQScoreCalculator:
                 return float(re.findall(r'(\d+)', production_time)[0]) * 7
             else:
                 return 3.0
-        except:
+        except Exception as e:
+            print(f"제작 시간 파싱 오류: {e}")
             return 3.0
     
     def _get_finishing_time(self, printshop: PrintShop, user_requirements: Dict) -> float:
