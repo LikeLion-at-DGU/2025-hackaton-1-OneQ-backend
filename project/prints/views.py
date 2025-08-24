@@ -857,19 +857,19 @@ def get_price_range(recommended_shops):
             # estimated_total_price 필드 사용
             estimated_price = shop.get('estimated_total_price', shop.get('estimated_price', ''))
             if estimated_price:
-                # "30만원" -> 300000
-                price_str = str(estimated_price).replace('만원', '').replace(',', '').strip()
+                # "42,000원" -> 42000
+                price_str = str(estimated_price).replace('원', '').replace(',', '').strip()
                 if price_str.isdigit():
-                    prices.append(int(price_str) * 10000)
+                    prices.append(int(price_str))
         
         if prices:
             min_price = min(prices)
             max_price = max(prices)
             
             if min_price == max_price:
-                return f"{min_price//10000}만원"
+                return f"{min_price:,}원"
             else:
-                return f"{min_price//10000}~{max_price//10000}만원"
+                return f"{min_price:,}~{max_price:,}원"
         else:
             return '정보 없음'
     except Exception as e:
