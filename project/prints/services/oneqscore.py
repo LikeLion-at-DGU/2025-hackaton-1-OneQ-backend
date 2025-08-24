@@ -396,6 +396,8 @@ def score_and_rank(slots: Dict, shops: List[PrintShop]) -> Dict:
             "due_score": due_scores[shop.id],
             "work_score": work_scores[shop.id],
             "phone": shop.phone,
+            "email": shop.email,
+            "address": shop.address,
             "production_time": shop.production_time,
             "delivery_options": shop.delivery_options,
             "is_verified": shop.is_verified,
