@@ -205,12 +205,6 @@ class OneQScoreCalculator:
             
             print(f"🔍 가격 파싱 시작: {category}, 수량: {quantity}")
             
-            # 캐시 키 생성
-            cache_key = f"{printshop.id}_{category}_{quantity}_{getattr(printshop, field_name, '')[:50]}"
-            if cache_key in self._price_cache:
-                print(f"📦 캐시된 결과 사용: {self._price_cache[cache_key]}")
-                return self._price_cache[cache_key]
-            
             # 카테고리별 가격 정보 필드 매핑
             price_fields = {
                 '명함': 'business_card_quantity_price_info',
@@ -227,6 +221,12 @@ class OneQScoreCalculator:
             if not field_name:
                 print(f"❌ 카테고리 '{category}'에 대한 필드명 없음")
                 return None
+            
+            # 캐시 키 생성 (field_name 정의 후)
+            cache_key = f"{printshop.id}_{category}_{quantity}_{getattr(printshop, field_name, '')[:50]}"
+            if cache_key in self._price_cache:
+                print(f"📦 캐시된 결과 사용: {self._price_cache[cache_key]}")
+                return self._price_cache[cache_key]
             
             price_text = getattr(printshop, field_name, '')
             print(f"📝 가격 텍스트: {price_text}")

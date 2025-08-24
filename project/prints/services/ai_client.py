@@ -173,13 +173,12 @@ JSON 형태로 응답해주세요:
         print("✅ AI 클라이언트 사용 가능")
         return True
     
-    def _get_db_options(self, category: str, region: str = None) -> Dict[str, List[str]]:
-        """DB에서 카테고리별 실제 옵션들을 가져오기"""
+    def _get_filtered_printshops(self, category: str, region: str = None) -> List:
+        """카테고리와 지역에 맞는 인쇄소들 필터링"""
         try:
             from ..models import PrintShop
             
             # 활성화된 인쇄소들에서 해당 카테고리 지원하는 곳들 필터링
-            # contains lookup 대신 Python 레벨에서 필터링
             all_printshops = PrintShop.objects.filter(is_active=True)
             printshops = []
             
@@ -199,250 +198,284 @@ JSON 형태로 응답해주세요:
                 
                 printshops = filtered_printshops
             
-            options = {}
-            
-            if category == "현수막":
-                # 현수막 사이즈 옵션 수집
-                size_options = set()
-                processing_options = set()
-                
-                for shop in printshops:
-                    if shop.banner_large_size_options:
-                        # 사이즈 정보에서 옵션 추출
-                        size_text = shop.banner_large_size_options
-                        # 간단한 정규표현식으로 사이즈 추출 (예: 1x3m, 2x4m 등)
-                        import re
-                        sizes = re.findall(r'\d+x\d+m', size_text)
-                        size_options.update(sizes)
-                    
-                    if shop.banner_large_processing_options:
-                        processing_text = shop.banner_large_processing_options
-                        # 가공 옵션 추출 (고리, 지퍼 등)
-                        if '고리' in processing_text:
-                            processing_options.add('고리')
-                        if '지퍼' in processing_text:
-                            processing_options.add('지퍼')
-                        if '없음' in processing_text or '가공없음' in processing_text:
-                            processing_options.add('없음')
-                
-                options['size'] = list(size_options) if size_options else None
-                options['processing'] = list(processing_options) if processing_options else None
-            
-            elif category == "브로슈어":
-                # 브로슈어 옵션 수집
-                paper_options = set()
-                size_options = set()
-                folding_options = set()
-                
-                for shop in printshops:
-                    if shop.brochure_paper_options:
-                        paper_text = shop.brochure_paper_options
-                        if '일반지' in paper_text:
-                            paper_options.add('일반지')
-                        if '아트지' in paper_text:
-                            paper_options.add('아트지')
-                        if '코팅지' in paper_text:
-                            paper_options.add('코팅지')
-                        if '합지' in paper_text:
-                            paper_options.add('합지')
-                    
-                    if shop.brochure_size_options:
-                        size_text = shop.brochure_size_options
-                        if 'A4' in size_text:
-                            size_options.add('A4')
-                        if 'A5' in size_text:
-                            size_options.add('A5')
-                        if 'B5' in size_text:
-                            size_options.add('B5')
-                        if 'A6' in size_text:
-                            size_options.add('A6')
-                    
-                    if shop.brochure_folding_options:
-                        folding_text = shop.brochure_folding_options
-                        if '2단접지' in folding_text:
-                            folding_options.add('2단접지')
-                        if '3단접지' in folding_text:
-                            folding_options.add('3단접지')
-                        if 'Z접지' in folding_text:
-                            folding_options.add('Z접지')
-                
-                options['paper'] = list(paper_options) if paper_options else None
-                options['size'] = list(size_options) if size_options else None
-                options['folding'] = list(folding_options) if folding_options else None
-            
-            elif category == "포스터":
-                # 포스터 옵션 수집
-                paper_options = set()
-                size_options = set()
-                coating_options = set()
-                
-                for shop in printshops:
-                    if shop.poster_paper_options:
-                        paper_text = shop.poster_paper_options
-                        if '일반지' in paper_text:
-                            paper_options.add('일반지')
-                        if '아트지' in paper_text:
-                            paper_options.add('아트지')
-                        if '코팅지' in paper_text:
-                            paper_options.add('코팅지')
-                        if '합지' in paper_text:
-                            paper_options.add('합지')
-                    
-                    # 포스터 사이즈 옵션은 quantity_price_info에서 추출
-                    if shop.poster_quantity_price_info:
-                        size_text = shop.poster_quantity_price_info
-                        if 'A4' in size_text:
-                            size_options.add('A4')
-                        if 'A3' in size_text:
-                            size_options.add('A3')
-                        if 'A2' in size_text:
-                            size_options.add('A2')
-                        if 'A1' in size_text:
-                            size_options.add('A1')
-                        if 'A0' in size_text:
-                            size_options.add('A0')
-                    
-                    if shop.poster_coating_options:
-                        coating_text = shop.poster_coating_options
-                        if '무광' in coating_text:
-                            coating_options.add('무광')
-                        if '유광' in coating_text:
-                            coating_options.add('유광')
-                        if '스팟' in coating_text:
-                            coating_options.add('스팟')
-                        if '없음' in coating_text or '코팅없음' in coating_text:
-                            coating_options.add('없음')
-                
-                options['paper'] = list(paper_options) if paper_options else None
-                options['size'] = list(size_options) if size_options else None
-                options['coating'] = list(coating_options) if coating_options else None
-            
-            elif category == "명함":
-                # 명함 옵션 수집
-                paper_options = set()
-                size_options = set()
-                printing_options = set()
-                finishing_options = set()
-                
-                for shop in printshops:
-                    if shop.business_card_paper_options:
-                        paper_text = shop.business_card_paper_options
-                        if '일반지' in paper_text:
-                            paper_options.add('일반지')
-                        if '고급지' in paper_text:
-                            paper_options.add('고급지')
-                        if '아트지' in paper_text:
-                            paper_options.add('아트지')
-                        if '코팅지' in paper_text:
-                            paper_options.add('코팅지')
-                    
-                    # 명함 사이즈 옵션은 quantity_price_info에서 추출
-                    if shop.business_card_quantity_price_info:
-                        size_text = shop.business_card_quantity_price_info
-                        if '90×54' in size_text or '90x54' in size_text:
-                            size_options.add('90×54mm')
-                        if '85×54' in size_text or '85x54' in size_text:
-                            size_options.add('85×54mm')
-                        if '90×50' in size_text or '90x50' in size_text:
-                            size_options.add('90×50mm')
-                        if '85×50' in size_text or '85x50' in size_text:
-                            size_options.add('85×50mm')
-                    
-                    if shop.business_card_printing_options:
-                        printing_text = shop.business_card_printing_options
-                        if '단면' in printing_text and '흑백' in printing_text:
-                            printing_options.add('단면 흑백')
-                        if '단면' in printing_text and '컬러' in printing_text:
-                            printing_options.add('단면 컬러')
-                        if '양면' in printing_text and '흑백' in printing_text:
-                            printing_options.add('양면 흑백')
-                        if '양면' in printing_text and '컬러' in printing_text:
-                            printing_options.add('양면 컬러')
-                    
-                    if shop.business_card_finishing_options:
-                        finishing_text = shop.business_card_finishing_options
-                        if '무광' in finishing_text:
-                            finishing_options.add('무광')
-                        if '유광' in finishing_text:
-                            finishing_options.add('유광')
-                        if '스팟' in finishing_text:
-                            finishing_options.add('스팟')
-                        if '엠보싱' in finishing_text:
-                            finishing_options.add('엠보싱')
-                
-                # DB에서 수집된 옵션 분석
-                options['paper'] = list(paper_options) if paper_options else None
-                options['size'] = list(size_options) if size_options else None
-                options['printing'] = list(printing_options) if printing_options else None
-                options['finishing'] = list(finishing_options) if finishing_options else None
-            
-            elif category == "배너":
-                # 배너 옵션 수집
-                size_options = set()
-                stand_options = set()
-                
-                for shop in printshops:
-                    if shop.banner_size_options:
-                        size_text = shop.banner_size_options
-                        # 정규표현식으로 사이즈 추출 (예: 1x3m, 2x4m 등)
-                        import re
-                        sizes = re.findall(r'\d+x\d+m', size_text)
-                        size_options.update(sizes)
-                    
-                    if shop.banner_stand_options:
-                        stand_text = shop.banner_stand_options
-                        if 'X자형' in stand_text or 'X형' in stand_text:
-                            stand_options.add('X자형')
-                        if 'A자형' in stand_text or 'A형' in stand_text:
-                            stand_options.add('A자형')
-                        if '롤업형' in stand_text or '롤업' in stand_text:
-                            stand_options.add('롤업형')
-                
-                options['size'] = list(size_options) if size_options else None
-                options['stand'] = list(stand_options) if stand_options else None
-            
-            elif category == "스티커":
-                # 스티커 옵션 수집
-                type_options = set()
-                size_options = set()
-                
-                for shop in printshops:
-                    if shop.sticker_type_options:
-                        type_text = shop.sticker_type_options
-                        if '일반스티커' in type_text or '일반' in type_text:
-                            type_options.add('일반스티커')
-                        if '방수스티커' in type_text or '방수' in type_text:
-                            type_options.add('방수스티커')
-                        if '반사스티커' in type_text or '반사' in type_text:
-                            type_options.add('반사스티커')
-                        if '전사스티커' in type_text or '전사' in type_text:
-                            type_options.add('전사스티커')
-                    
-                    if shop.sticker_size_options:
-                        size_text = shop.sticker_size_options
-                        # 정규표현식으로 사이즈 추출 (예: 50x50mm, 100x100mm 등)
-                        import re
-                        sizes = re.findall(r'\d+x\d+mm', size_text)
-                        size_options.update(sizes)
-                        # 원형 사이즈도 추출
-                        circle_sizes = re.findall(r'지름\s*(\d+)mm', size_text)
-                        for size in circle_sizes:
-                            size_options.add(f'지름{size}mm')
-                
-                options['type'] = list(type_options) if type_options else None
-                options['size'] = list(size_options) if size_options else None
-            
-            return options
+            return printshops
             
         except Exception as e:
-            print(f"❌ DB 옵션 수집 오류: {e}")
-            return {}
+            print(f"❌ 인쇄소 필터링 오류: {e}")
+            return []
+    
+    def _get_field_options(self, category: str, field_name: str, region: str = None) -> List[str]:
+        """특정 필드의 옵션들만 조회 (필요할 때만 호출)"""
+        printshops = self._get_filtered_printshops(category, region)
+        
+        if field_name == 'paper':
+            return self._get_paper_options(category, printshops)
+        elif field_name == 'size':
+            return self._get_size_options(category, printshops)
+        elif field_name == 'coating':
+            return self._get_coating_options(category, printshops)
+        elif field_name == 'printing':
+            return self._get_printing_options(category, printshops)
+        elif field_name == 'finishing':
+            return self._get_finishing_options(category, printshops)
+        elif field_name == 'folding':
+            return self._get_folding_options(category, printshops)
+        elif field_name == 'processing':
+            return self._get_processing_options(category, printshops)
+        elif field_name == 'stand':
+            return self._get_stand_options(category, printshops)
+        elif field_name == 'type':
+            return self._get_type_options(category, printshops)
+        
+        return []
+    
+    def _get_paper_options(self, category: str, printshops: List) -> List[str]:
+        """용지 옵션 조회"""
+        paper_options = set()
+        
+        for shop in printshops:
+            if category == "명함" and shop.business_card_paper_options:
+                paper_text = shop.business_card_paper_options
+                if '스노우 매트지' in paper_text or '스노우매트지' in paper_text:
+                    paper_options.add('스노우 매트지')
+                if '프리미엄 코트지' in paper_text or '프리미엄코트지' in paper_text:
+                    paper_options.add('프리미엄 코트지')
+                if '반누보' in paper_text:
+                    paper_options.add('반누보')
+                if '일반지' in paper_text:
+                    paper_options.add('일반지')
+                if '고급지' in paper_text:
+                    paper_options.add('고급지')
+                if '아트지' in paper_text:
+                    paper_options.add('아트지')
+                if '코팅지' in paper_text:
+                    paper_options.add('코팅지')
+            
+            elif category == "포스터" and shop.poster_paper_options:
+                paper_text = shop.poster_paper_options
+                if '일반지' in paper_text:
+                    paper_options.add('일반지')
+                if '아트지' in paper_text:
+                    paper_options.add('아트지')
+                if '코팅지' in paper_text:
+                    paper_options.add('코팅지')
+                if '합지' in paper_text:
+                    paper_options.add('합지')
+            
+            elif category == "브로슈어" and shop.brochure_paper_options:
+                paper_text = shop.brochure_paper_options
+                if '일반지' in paper_text:
+                    paper_options.add('일반지')
+                if '아트지' in paper_text:
+                    paper_options.add('아트지')
+                if '코팅지' in paper_text:
+                    paper_options.add('코팅지')
+                if '합지' in paper_text:
+                    paper_options.add('합지')
+        
+        return list(paper_options) if paper_options else []
+    
+    def _get_size_options(self, category: str, printshops: List) -> List[str]:
+        """사이즈 옵션 조회"""
+        size_options = set()
+        
+        for shop in printshops:
+            if category == "명함" and shop.business_card_quantity_price_info:
+                size_text = shop.business_card_quantity_price_info
+                if '90×54' in size_text or '90x54' in size_text:
+                    size_options.add('90×54mm')
+                if '85×54' in size_text or '85x54' in size_text:
+                    size_options.add('85×54mm')
+                if '90×50' in size_text or '90x50' in size_text:
+                    size_options.add('90×50mm')
+                if '85×50' in size_text or '85x50' in size_text:
+                    size_options.add('85×50mm')
+            
+            elif category == "포스터" and shop.poster_quantity_price_info:
+                size_text = shop.poster_quantity_price_info
+                if 'A4' in size_text:
+                    size_options.add('A4')
+                if 'A3' in size_text:
+                    size_options.add('A3')
+                if 'A2' in size_text:
+                    size_options.add('A2')
+                if 'A1' in size_text:
+                    size_options.add('A1')
+                if 'A0' in size_text:
+                    size_options.add('A0')
+            
+            elif category == "브로슈어" and shop.brochure_quantity_price_info:
+                size_text = shop.brochure_quantity_price_info
+                if 'A4' in size_text:
+                    size_options.add('A4')
+                if 'A5' in size_text:
+                    size_options.add('A5')
+                if 'B5' in size_text:
+                    size_options.add('B5')
+                if 'A6' in size_text:
+                    size_options.add('A6')
+                if '2단' in size_text:
+                    size_options.add('2단 A4')
+                if '3단' in size_text:
+                    size_options.add('3단 A4')
+                if '정방형' in size_text:
+                    size_options.add('정방형 3단')
+            
+            elif category == "배너" and shop.banner_size_options:
+                size_text = shop.banner_size_options
+                import re
+                sizes = re.findall(r'\d+x\d+m', size_text)
+                size_options.update(sizes)
+            
+            elif category == "현수막" and shop.banner_large_size_options:
+                size_text = shop.banner_large_size_options
+                import re
+                sizes = re.findall(r'\d+x\d+m', size_text)
+                size_options.update(sizes)
+            
+            elif category == "스티커" and shop.sticker_size_options:
+                size_text = shop.sticker_size_options
+                import re
+                sizes = re.findall(r'\d+x\d+mm', size_text)
+                size_options.update(sizes)
+                circle_sizes = re.findall(r'지름\s*(\d+)mm', size_text)
+                for size in circle_sizes:
+                    size_options.add(f'지름{size}mm')
+        
+        return list(size_options) if size_options else []
+    
+    def _get_coating_options(self, category: str, printshops: List) -> List[str]:
+        """코팅 옵션 조회"""
+        coating_options = set()
+        
+        for shop in printshops:
+            if category == "포스터" and shop.poster_coating_options:
+                coating_text = shop.poster_coating_options
+                if '무광' in coating_text:
+                    coating_options.add('무광')
+                if '유광' in coating_text:
+                    coating_options.add('유광')
+                if '스팟' in coating_text:
+                    coating_options.add('스팟')
+                if '없음' in coating_text or '코팅없음' in coating_text:
+                    coating_options.add('없음')
+        
+        return list(coating_options) if coating_options else []
+    
+    def _get_printing_options(self, category: str, printshops: List) -> List[str]:
+        """인쇄 방식 옵션 조회"""
+        printing_options = set()
+        
+        for shop in printshops:
+            if category == "명함" and shop.business_card_printing_options:
+                printing_text = shop.business_card_printing_options
+                if '단면 4도' in printing_text or '단면4도' in printing_text:
+                    printing_options.add('단면 4도')
+                if '양면 4도' in printing_text or '양면4도' in printing_text:
+                    printing_options.add('양면 4도')
+                if '단면' in printing_text and '흑백' in printing_text:
+                    printing_options.add('단면 흑백')
+                if '단면' in printing_text and '컬러' in printing_text:
+                    printing_options.add('단면 컬러')
+                if '양면' in printing_text and '흑백' in printing_text:
+                    printing_options.add('양면 흑백')
+                if '양면' in printing_text and '컬러' in printing_text:
+                    printing_options.add('양면 컬러')
+        
+        return list(printing_options) if printing_options else []
+    
+    def _get_finishing_options(self, category: str, printshops: List) -> List[str]:
+        """후가공 옵션 조회"""
+        finishing_options = set()
+        
+        for shop in printshops:
+            if category == "명함" and shop.business_card_finishing_options:
+                finishing_text = shop.business_card_finishing_options
+                if '부분 UV' in finishing_text or '부분UV' in finishing_text:
+                    finishing_options.add('부분 UV')
+                if '귀도리' in finishing_text:
+                    finishing_options.add('귀도리')
+                if '박' in finishing_text:
+                    finishing_options.add('박')
+                if '무광' in finishing_text:
+                    finishing_options.add('무광')
+                if '유광' in finishing_text:
+                    finishing_options.add('유광')
+                if '스팟' in finishing_text:
+                    finishing_options.add('스팟')
+                if '엠보싱' in finishing_text:
+                    finishing_options.add('엠보싱')
+        
+        return list(finishing_options) if finishing_options else []
+    
+    def _get_folding_options(self, category: str, printshops: List) -> List[str]:
+        """접지 옵션 조회"""
+        folding_options = set()
+        
+        for shop in printshops:
+            if category == "브로슈어" and shop.brochure_folding_options:
+                folding_text = shop.brochure_folding_options
+                if '2단접지' in folding_text:
+                    folding_options.add('2단접지')
+                if '3단접지' in folding_text:
+                    folding_options.add('3단접지')
+                if 'Z접지' in folding_text:
+                    folding_options.add('Z접지')
+        
+        return list(folding_options) if folding_options else []
+    
+    def _get_processing_options(self, category: str, printshops: List) -> List[str]:
+        """가공 옵션 조회"""
+        processing_options = set()
+        
+        for shop in printshops:
+            if category == "현수막" and shop.banner_large_processing_options:
+                processing_text = shop.banner_large_processing_options
+                if '고리' in processing_text:
+                    processing_options.add('고리')
+                if '지퍼' in processing_text:
+                    processing_options.add('지퍼')
+                if '없음' in processing_text or '가공없음' in processing_text:
+                    processing_options.add('없음')
+        
+        return list(processing_options) if processing_options else []
+    
+    def _get_stand_options(self, category: str, printshops: List) -> List[str]:
+        """거치대 옵션 조회"""
+        stand_options = set()
+        
+        for shop in printshops:
+            if category == "배너" and shop.banner_stand_options:
+                stand_text = shop.banner_stand_options
+                if 'X자형' in stand_text or 'X형' in stand_text:
+                    stand_options.add('X자형')
+                if 'A자형' in stand_text or 'A형' in stand_text:
+                    stand_options.add('A자형')
+                if '롤업형' in stand_text or '롤업' in stand_text:
+                    stand_options.add('롤업형')
+        
+        return list(stand_options) if stand_options else []
+    
+    def _get_type_options(self, category: str, printshops: List) -> List[str]:
+        """타입 옵션 조회"""
+        type_options = set()
+        
+        for shop in printshops:
+            if category == "스티커" and shop.sticker_type_options:
+                type_text = shop.sticker_type_options
+                if '일반스티커' in type_text or '일반' in type_text:
+                    type_options.add('일반스티커')
+                if '방수스티커' in type_text or '방수' in type_text:
+                    type_options.add('방수스티커')
+                if '반사스티커' in type_text or '반사' in type_text:
+                    type_options.add('반사스티커')
+                if '전사스티커' in type_text or '전사' in type_text:
+                    type_options.add('전사스티커')
+        
+        return list(type_options) if type_options else []
     
     def _get_category_info(self, category: str, region: str = None) -> str:
-        """카테고리별 정보 수집 순서 반환 (DB 옵션 포함)"""
-        # DB에서 실제 옵션들 가져오기
-        db_options = self._get_db_options(category, region)
-        
+        """카테고리별 정보 수집 순서 반환 (필드별 개별 조회)"""
         # 기본 프롬프트 템플릿
         base_prompts = {
             "명함": """명함 제작에 필요한 정보를 다음 순서로 수집해주세요:
@@ -512,126 +545,66 @@ JSON 형태로 응답해주세요:
         
         base_prompt = base_prompts.get(category, "")
         
-        # DB 옵션으로 템플릿 치환 (DB에 없으면 AI가 추천)
+        # 각 필드별로 개별 조회하여 템플릿 치환
         if category == "현수막":
-            size_options = db_options.get('size')
-            processing_options = db_options.get('processing')
+            size_options = self._get_field_options(category, 'size', region)
+            processing_options = self._get_field_options(category, 'processing', region)
             
-            if size_options:
-                size_text = ', '.join(size_options)
-            else:
-                size_text = "1x3m, 2x4m, 3x6m 등"
-            
-            if processing_options:
-                processing_text = ', '.join(processing_options)
-            else:
-                processing_text = "고리, 지퍼, 없음 등"
+            size_text = ', '.join(size_options) if size_options else "1x3m, 2x4m, 3x6m 등"
+            processing_text = ', '.join(processing_options) if processing_options else "고리, 지퍼, 없음 등"
             
             return base_prompt.format(size_options=size_text, processing_options=processing_text)
         
         elif category == "브로슈어":
-            paper_options = db_options.get('paper')
-            size_options = db_options.get('size')
-            folding_options = db_options.get('folding')
+            paper_options = self._get_field_options(category, 'paper', region)
+            size_options = self._get_field_options(category, 'size', region)
+            folding_options = self._get_field_options(category, 'folding', region)
             
-            if paper_options:
-                paper_text = ', '.join(paper_options)
-            else:
-                paper_text = "일반지, 아트지, 코팅지, 합지 등"
-            
-            if size_options:
-                size_text = ', '.join(size_options)
-            else:
-                size_text = "A4, A5, B5, A6 등"
-            
-            if folding_options:
-                folding_text = ', '.join(folding_options)
-            else:
-                folding_text = "2단접지, 3단접지, Z접지, 없음 등"
+            paper_text = ', '.join(paper_options) if paper_options else "일반지, 아트지, 코팅지, 합지 등"
+            size_text = ', '.join(size_options) if size_options else "A4, A5, B5, A6 등"
+            folding_text = ', '.join(folding_options) if folding_options else "2단접지, 3단접지, Z접지, 없음 등"
             
             return base_prompt.format(paper_options=paper_text, size_options=size_text, folding_options=folding_text)
         
         elif category == "포스터":
-            paper_options = db_options.get('paper')
-            size_options = db_options.get('size')
-            coating_options = db_options.get('coating')
+            paper_options = self._get_field_options(category, 'paper', region)
+            size_options = self._get_field_options(category, 'size', region)
+            coating_options = self._get_field_options(category, 'coating', region)
             
-            if paper_options:
-                paper_text = ', '.join(paper_options)
-            else:
-                paper_text = "일반지, 아트지, 코팅지, 합지 등"
-            
-            if size_options:
-                size_text = ', '.join(size_options)
-            else:
-                # DB에 사이즈 정보가 없으면 모든 사이즈 지원으로 간주
-                size_text = "A4, A3, A2, A1, A0 등 (원하는 사이즈 말씀해주세요)"
-            
-            if coating_options:
-                coating_text = ', '.join(coating_options)
-            else:
-                coating_text = "무광, 유광, 스팟, 없음 등"
+            paper_text = ', '.join(paper_options) if paper_options else "일반지, 아트지, 코팅지, 합지 등"
+            size_text = ', '.join(size_options) if size_options else "A4, A3, A2, A1, A0 등 (원하는 사이즈 말씀해주세요)"
+            coating_text = ', '.join(coating_options) if coating_options else "무광, 유광, 스팟, 없음 등"
             
             return base_prompt.format(paper_options=paper_text, size_options=size_text, coating_options=coating_text)
         
         elif category == "명함":
-            paper_options = db_options.get('paper')
-            size_options = db_options.get('size')
-            printing_options = db_options.get('printing')
-            finishing_options = db_options.get('finishing')
+            paper_options = self._get_field_options(category, 'paper', region)
+            size_options = self._get_field_options(category, 'size', region)
+            printing_options = self._get_field_options(category, 'printing', region)
+            finishing_options = self._get_field_options(category, 'finishing', region)
             
-            if paper_options:
-                paper_text = ', '.join(paper_options)
-            else:
-                paper_text = "일반지, 고급지, 아트지, 코팅지 등"
-            
-            if size_options:
-                size_text = ', '.join(size_options)
-            else:
-                # DB에 사이즈 정보가 없으면 모든 사이즈 지원으로 간주
-                size_text = "90×54mm, 85×54mm, 90×50mm, 85×50mm 등 (원하는 사이즈 말씀해주세요)"
-            
-            if printing_options:
-                printing_text = ', '.join(printing_options)
-            else:
-                printing_text = "단면 흑백, 단면 컬러, 양면 흑백, 양면 컬러 등"
-            
-            if finishing_options:
-                finishing_text = ', '.join(finishing_options)
-            else:
-                finishing_text = "무광, 유광, 스팟, 엠보싱 등"
+            paper_text = ', '.join(paper_options) if paper_options else "일반지, 고급지, 아트지, 코팅지 등"
+            size_text = ', '.join(size_options) if size_options else "90×54mm, 85×54mm, 90×50mm, 85×50mm 등 (원하는 사이즈 말씀해주세요)"
+            printing_text = ', '.join(printing_options) if printing_options else "단면 흑백, 단면 컬러, 양면 흑백, 양면 컬러 등"
+            finishing_text = ', '.join(finishing_options) if finishing_options else "무광, 유광, 스팟, 엠보싱 등"
             
             return base_prompt.format(paper_options=paper_text, size_options=size_text, printing_options=printing_text, finishing_options=finishing_text)
         
         elif category == "배너":
-            size_options = db_options.get('size')
-            stand_options = db_options.get('stand')
+            size_options = self._get_field_options(category, 'size', region)
+            stand_options = self._get_field_options(category, 'stand', region)
             
-            if size_options:
-                size_text = ', '.join(size_options)
-            else:
-                size_text = "1x3m, 2x4m, 3x6m 등"
-            
-            if stand_options:
-                stand_text = ', '.join(stand_options)
-            else:
-                stand_text = "X자형, A자형, 롤업형 등"
+            size_text = ', '.join(size_options) if size_options else "1x3m, 2x4m, 3x6m 등"
+            stand_text = ', '.join(stand_options) if stand_options else "X자형, A자형, 롤업형 등"
             
             return base_prompt.format(size_options=size_text, stand_options=stand_text)
         
         elif category == "스티커":
-            type_options = db_options.get('type')
-            size_options = db_options.get('size')
+            type_options = self._get_field_options(category, 'type', region)
+            size_options = self._get_field_options(category, 'size', region)
             
-            if type_options:
-                type_text = ', '.join(type_options)
-            else:
-                type_text = "일반스티커, 방수스티커, 반사스티커, 전사스티커 등"
-            
-            if size_options:
-                size_text = ', '.join(size_options)
-            else:
-                size_text = "50x50mm, 100x100mm, 200x200mm / 원형은 지름 등"
+            type_text = ', '.join(type_options) if type_options else "일반스티커, 방수스티커, 반사스티커, 전사스티커 등"
+            size_text = ', '.join(size_options) if size_options else "50x50mm, 100x100mm, 200x200mm / 원형은 지름 등"
             
             return base_prompt.format(type_options=type_text, size_options=size_text)
         
@@ -792,15 +765,12 @@ JSON 형태로 응답해주세요:
             return {"error": "AI 서비스를 사용할 수 없습니다."}
         
         try:
-            # DB에서 실제 옵션들 가져오기
-            db_options = self._get_db_options(category, region)
-            
-            # 카테고리별 프롬프트 (DB 옵션 포함)
+            # 카테고리별 프롬프트 (필드별 개별 조회)
             category_prompts = {
                 "스티커": f"""
 스티커 제작 정보를 다음 순서대로 추출해주세요:
-1. paper: 스티커 종류 ({', '.join(db_options.get('type', ['일반스티커', '방수스티커', '반사스티커', '전사스티커'])) if db_options.get('type') else '일반스티커, 방수스티커, 반사스티커, 전사스티커 등'})
-2. size: 사이즈 ({', '.join(db_options.get('size', ['50x50mm', '100x100mm', '200x200mm'])) if db_options.get('size') else '50x50mm, 100x100mm, 200x200mm / 원형은 지름 등'})
+1. paper: 스티커 종류 ({', '.join(self._get_field_options(category, 'type', region)) or '일반스티커, 방수스티커, 반사스티커, 전사스티커 등'})
+2. size: 사이즈 ({', '.join(self._get_field_options(category, 'size', region)) or '50x50mm, 100x100mm, 200x200mm / 원형은 지름 등'})
 3. quantity: 수량 (숫자만)
 4. due_days: 납기일 (며칠 내에 필요한지 숫자만, 예: 3일, 7일, 14일)
 5. region: 지역
@@ -808,10 +778,10 @@ JSON 형태로 응답해주세요:
 """,
                 "명함": f"""
 명함 제작 정보를 다음 순서대로 추출해주세요:
-1. paper: 용지 종류 ({', '.join(db_options.get('paper', ['일반지', '고급지', '아트지', '코팅지'])) if db_options.get('paper') else '일반지, 고급지, 아트지, 코팅지 등'})
-2. size: 명함 사이즈 ({', '.join(db_options.get('size', ['90×54mm', '85×54mm', '90×50mm', '85×50mm'])) if db_options.get('size') else '90×54mm, 85×54mm, 90×50mm, 85×50mm 등'})
-3. printing: 인쇄 방식 ({', '.join(db_options.get('printing', ['단면 흑백', '단면 컬러', '양면 흑백', '양면 컬러'])) if db_options.get('printing') else '단면 흑백, 단면 컬러, 양면 흑백, 양면 컬러 등'})
-4. finishing: 후가공 ({', '.join(db_options.get('finishing', ['무광', '유광', '스팟', '엠보싱'])) if db_options.get('finishing') else '무광, 유광, 스팟, 엠보싱 등'})
+1. paper: 용지 종류 ({', '.join(self._get_field_options(category, 'paper', region)) or '일반지, 고급지, 아트지, 코팅지 등'})
+2. size: 명함 사이즈 ({', '.join(self._get_field_options(category, 'size', region)) or '90×54mm, 85×54mm, 90×50mm, 85×50mm 등'})
+3. printing: 인쇄 방식 ({', '.join(self._get_field_options(category, 'printing', region)) or '단면 흑백, 단면 컬러, 양면 흑백, 양면 컬러 등'})
+4. finishing: 후가공 ({', '.join(self._get_field_options(category, 'finishing', region)) or '무광, 유광, 스팟, 엠보싱 등'})
 5. quantity: 수량 (숫자만)
 6. due_days: 납기일 (며칠 내에 필요한지 숫자만, 예: 3일, 7일, 14일)
 7. region: 지역
@@ -819,9 +789,9 @@ JSON 형태로 응답해주세요:
 """,
                 "포스터": f"""
 포스터 제작 정보를 다음 순서대로 추출해주세요:
-1. paper: 용지 종류 ({', '.join(db_options.get('paper', ['일반지', '아트지', '코팅지', '합지'])) if db_options.get('paper') else '일반지, 아트지, 코팅지, 합지 등'})
-2. size: 포스터 사이즈 ({', '.join(db_options.get('size', ['A4', 'A3', 'A2'])) if db_options.get('size') else 'A4, A3, A2 등'})
-3. coating: 포스터 코팅 종류 ({', '.join(db_options.get('coating', ['무광', '유광', '스팟', '없음'])) if db_options.get('coating') else '무광, 유광, 스팟, 없음 등'})
+1. paper: 용지 종류 ({', '.join(self._get_field_options(category, 'paper', region)) or '일반지, 아트지, 코팅지, 합지 등'})
+2. size: 포스터 사이즈 ({', '.join(self._get_field_options(category, 'size', region)) or 'A4, A3, A2 등'})
+3. coating: 포스터 코팅 종류 ({', '.join(self._get_field_options(category, 'coating', region)) or '무광, 유광, 스팟, 없음 등'})
 4. quantity: 포스터 수량 (숫자만)
 5. due_days: 납기일 (며칠 내에 필요한지 숫자만, 예: 3일, 7일, 14일)
 6. region: 지역
@@ -829,9 +799,9 @@ JSON 형태로 응답해주세요:
 """,
                 "브로슈어": f"""
 브로슈어 제작 정보를 다음 순서대로 추출해주세요:
-1. paper: 용지 종류 ({', '.join(db_options.get('paper', ['일반지', '아트지', '코팅지', '합지'])) if db_options.get('paper') else '일반지, 아트지, 코팅지, 합지 등'})
-2. size: 사이즈 종류 ({', '.join(db_options.get('size', ['A4', 'A5', 'B5', 'A6'])) if db_options.get('size') else 'A4, A5, B5, A6 등'})
-3. folding: 접지 종류 ({', '.join(db_options.get('folding', ['2단접지', '3단접지', 'Z접지', '없음'])) if db_options.get('folding') else '2단접지, 3단접지, Z접지, 없음 등'})
+1. paper: 용지 종류 ({', '.join(self._get_field_options(category, 'paper', region)) or '일반지, 아트지, 코팅지, 합지 등'})
+2. size: 사이즈 종류 ({', '.join(self._get_field_options(category, 'size', region)) or 'A4, A5, B5, A6 등'})
+3. folding: 접지 종류 ({', '.join(self._get_field_options(category, 'folding', region)) or '2단접지, 3단접지, Z접지, 없음 등'})
 4. quantity: 수량 (숫자만)
 5. due_days: 납기일 (며칠 내에 필요한지 숫자만, 예: 3일, 7일, 14일)
 6. region: 지역
@@ -839,8 +809,8 @@ JSON 형태로 응답해주세요:
 """,
                 "배너": f"""
 배너 제작 정보를 다음 순서대로 추출해주세요:
-1. size: 배너 사이즈 ({', '.join(db_options.get('size', ['1x3m', '2x4m', '3x6m'])) if db_options.get('size') else '1x3m, 2x4m, 3x6m 등'})
-2. stand: 배너 거치대 종류 ({', '.join(db_options.get('stand', ['X자형', 'A자형', '롤업형'])) if db_options.get('stand') else 'X자형, A자형, 롤업형 등'})
+1. size: 배너 사이즈 ({', '.join(self._get_field_options(category, 'size', region)) or '1x3m, 2x4m, 3x6m 등'})
+2. stand: 배너 거치대 종류 ({', '.join(self._get_field_options(category, 'stand', region)) or 'X자형, A자형, 롤업형 등'})
 3. quantity: 배너 수량 (숫자만)
 4. due_days: 납기일 (며칠 내에 필요한지 숫자만, 예: 3일, 7일, 14일)
 5. region: 지역
@@ -848,8 +818,8 @@ JSON 형태로 응답해주세요:
 """,
                 "현수막": f"""
 현수막 제작 정보를 다음 순서대로 추출해주세요:
-1. size: 현수막 사이즈 ({', '.join(db_options.get('size', ['1x3m', '2x4m', '3x6m'])) if db_options.get('size') else '1x3m, 2x4m, 3x6m 등'})
-2. processing: 현수막 추가 가공 ({', '.join(db_options.get('processing', ['고리', '지퍼', '없음'])) if db_options.get('processing') else '고리, 지퍼, 없음 등'})
+1. size: 현수막 사이즈 ({', '.join(self._get_field_options(category, 'size', region)) or '1x3m, 2x4m, 3x6m 등'})
+2. processing: 현수막 추가 가공 ({', '.join(self._get_field_options(category, 'processing', region)) or '고리, 지퍼, 없음 등'})
 3. quantity: 현수막 수량 (숫자만)
 4. due_days: 납기일 (며칠 내에 필요한지 숫자만, 예: 3일, 7일, 14일)
 5. region: 지역
