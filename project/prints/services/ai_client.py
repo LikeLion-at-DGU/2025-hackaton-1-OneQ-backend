@@ -288,8 +288,9 @@ JSON 형태로 응답해주세요:
                         if '합지' in paper_text:
                             paper_options.add('합지')
                     
-                    if shop.poster_size_options:
-                        size_text = shop.poster_size_options
+                    # 포스터 사이즈 옵션은 quantity_price_info에서 추출
+                    if shop.poster_quantity_price_info:
+                        size_text = shop.poster_quantity_price_info
                         if 'A4' in size_text:
                             size_options.add('A4')
                         if 'A3' in size_text:
@@ -335,8 +336,9 @@ JSON 형태로 응답해주세요:
                         if '코팅지' in paper_text:
                             paper_options.add('코팅지')
                     
-                    if shop.business_card_size_options:
-                        size_text = shop.business_card_size_options
+                    # 명함 사이즈 옵션은 quantity_price_info에서 추출
+                    if shop.business_card_quantity_price_info:
+                        size_text = shop.business_card_quantity_price_info
                         if '90×54' in size_text or '90x54' in size_text:
                             size_options.add('90×54mm')
                         if '85×54' in size_text or '85x54' in size_text:
@@ -368,6 +370,7 @@ JSON 형태로 응답해주세요:
                         if '엠보싱' in finishing_text:
                             finishing_options.add('엠보싱')
                 
+                # DB에서 수집된 옵션 분석
                 options['paper'] = list(paper_options) if paper_options else None
                 options['size'] = list(size_options) if size_options else None
                 options['printing'] = list(printing_options) if printing_options else None
@@ -561,7 +564,8 @@ JSON 형태로 응답해주세요:
             if size_options:
                 size_text = ', '.join(size_options)
             else:
-                size_text = "A4, A3, A2 등"
+                # DB에 사이즈 정보가 없으면 모든 사이즈 지원으로 간주
+                size_text = "A4, A3, A2, A1, A0 등 (원하는 사이즈 말씀해주세요)"
             
             if coating_options:
                 coating_text = ', '.join(coating_options)
@@ -584,7 +588,8 @@ JSON 형태로 응답해주세요:
             if size_options:
                 size_text = ', '.join(size_options)
             else:
-                size_text = "90×54mm, 85×54mm, 90×50mm, 85×50mm 등"
+                # DB에 사이즈 정보가 없으면 모든 사이즈 지원으로 간주
+                size_text = "90×54mm, 85×54mm, 90×50mm, 85×50mm 등 (원하는 사이즈 말씀해주세요)"
             
             if printing_options:
                 printing_text = ', '.join(printing_options)
