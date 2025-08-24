@@ -1,9 +1,15 @@
 # prints/services/oneq_score.py
 import re
 import json
+import openai
 from typing import Dict, List, Tuple, Optional
 from datetime import datetime, timedelta
 from ..models import PrintShop
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+openai.api_key = os.getenv('OPENAI_API_KEY')
 
 
 class OneQScoreCalculator:
@@ -188,7 +194,7 @@ class OneQScoreCalculator:
         return workfit_score
     
     def _parse_price_info(self, printshop: PrintShop, category: str, quantity: int) -> Optional[Dict]:
-        """카테고리별 가격 정보 파싱"""
+        """카테고리별 가격 정보 파싱 (AI + 정규표현식 혼합)"""
         try:
             # 카테고리별 가격 정보 필드 매핑
             price_fields = {
@@ -208,12 +214,19 @@ class OneQScoreCalculator:
             if not price_text:
                 return None
             
-            # 간단한 가격 파싱 (실제로는 더 정교한 파싱 필요)
-            # 예: "100부: 50,000원, 500부: 200,000원"
-            prices = re.findall(r'(\d+)부:\s*(\d+)원', price_text)
+            # 1. 먼저 정규표현식으로 시도
+            prices = re.findall(r'(\d+)(?:부|매)\s*[:\-]\s*(\d+)원', price_text)
             
             if not prices:
-                # 기본 가격 추정
+                # 2. 정규표현식 실패 시 AI 파싱 시도
+                try:
+                    ai_prices = self._ai_parse_prices(price_text, category, quantity)
+                    if ai_prices:
+                        return ai_prices
+                except Exception as ai_error:
+                    print(f"AI 파싱 실패, 기본값 사용: {ai_error}")
+                
+                # 3. AI도 실패하면 기본 가격 추정
                 return {
                     'unit_price': 50000,  # 기본 단가
                     'total_price': 50000 * quantity
@@ -238,6 +251,58 @@ class OneQScoreCalculator:
             
         except Exception as e:
             print(f"가격 정보 파싱 오류: {e}")
+            return None
+    
+    def _ai_parse_prices(self, price_text: str, category: str, quantity: int) -> Optional[Dict]:
+        """AI를 사용한 가격 정보 파싱"""
+        try:
+            prompt = f"""
+다음은 {category} 인쇄 가격 정보입니다. 이 텍스트에서 수량별 가격을 추출해주세요.
+
+텍스트: {price_text}
+
+요청 수량: {quantity}개
+
+다음 JSON 형식으로 응답해주세요:
+{{
+    "unit_price": 단가,
+    "total_price": 총가격
+}}
+
+예시:
+- "100매 - 12,000원, 200매 - 22,000원" → {{"unit_price": 120, "total_price": 12000}}
+- "최소 30매, 30매 - 55,000원" → {{"unit_price": 1833, "total_price": 55000}}
+
+주의사항:
+1. 요청 수량에 맞는 가격을 찾아주세요
+2. 단가는 총가격을 수량으로 나눈 값입니다
+3. 숫자만 반환해주세요 (콤마, 원 제외)
+"""
+
+            response = openai.ChatCompletion.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": "당신은 가격 정보를 정확히 파싱하는 전문가입니다."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.1,
+                max_tokens=100
+            )
+            
+            result_text = response.choices[0].message.content.strip()
+            
+            # JSON 파싱
+            if result_text.startswith('{') and result_text.endswith('}'):
+                result = json.loads(result_text)
+                return {
+                    'unit_price': int(result.get('unit_price', 0)),
+                    'total_price': int(result.get('total_price', 0))
+                }
+            
+            return None
+            
+        except Exception as e:
+            print(f"AI 가격 파싱 오류: {e}")
             return None
     
     def _parse_budget(self, budget_str: str) -> Optional[int]:
@@ -311,8 +376,7 @@ class OneQScoreCalculator:
             return (matches / len(required_specs)) * 100.0
     
     def _calculate_option_fit(self, printshop: PrintShop, user_requirements: Dict) -> float:
-        """선택 스펙 적합도 계산"""
-        # 간단한 옵션 매칭 (실제로는 더 정교한 로직 필요)
+        """선택 스펙 적합도 계산 (AI 기반 매칭)"""
         option_matches = 0
         total_options = 0
         
@@ -320,15 +384,92 @@ class OneQScoreCalculator:
         for option in options:
             if user_requirements.get(option):
                 total_options += 1
-                # 옵션 지원 여부 확인 (간단한 텍스트 매칭)
+                # 옵션 지원 여부 확인 (AI + 텍스트 매칭)
                 option_text = getattr(printshop, f'{option}_options', '')
-                if option_text and user_requirements[option] in option_text:
-                    option_matches += 1
+                if option_text:
+                    user_option = user_requirements[option]
+                    
+                    # 1. 먼저 간단한 텍스트 매칭 시도
+                    if self._simple_option_match(user_option, option_text):
+                        option_matches += 1
+                    else:
+                        # 2. AI 매칭 시도
+                        try:
+                            if self._ai_option_match(user_option, option_text, option):
+                                option_matches += 1
+                        except Exception as ai_error:
+                            print(f"AI 옵션 매칭 실패: {ai_error}")
         
         if total_options == 0:
             return 85.0  # 기본값
         
         return (option_matches / total_options) * 100.0
+    
+    def _simple_option_match(self, user_option: str, option_text: str) -> bool:
+        """간단한 텍스트 매칭"""
+        user_option_lower = user_option.lower()
+        option_text_lower = option_text.lower()
+        
+        # 직접 매칭
+        if user_option_lower in option_text_lower:
+            return True
+        
+        # 유사한 옵션 매칭
+        if user_option_lower == '무광' and '매트' in option_text_lower:
+            return True
+        elif user_option_lower == '일반지' and ('코트지' in option_text_lower or '일반' in option_text_lower):
+            return True
+        
+        return False
+    
+    def _ai_option_match(self, user_option: str, option_text: str, option_type: str) -> bool:
+        """AI를 사용한 옵션 매칭"""
+        try:
+            prompt = f"""
+다음은 인쇄 옵션 정보입니다. 사용자가 요청한 옵션이 제공되는 옵션과 일치하는지 판단해주세요.
+
+옵션 종류: {option_type}
+사용자 요청: {user_option}
+제공 옵션: {option_text}
+
+다음 JSON 형식으로 응답해주세요:
+{{
+    "match": true/false,
+    "reason": "매칭 이유"
+}}
+
+예시:
+- 사용자: "무광", 제공: "UV(+3000원), 매트(+3000원)" → {{"match": true, "reason": "매트는 무광과 동일한 의미"}}
+- 사용자: "일반지", 제공: "프리미엄 코트지(+0원), 스노우 매트(+1500원)" → {{"match": true, "reason": "프리미엄 코트지는 일반지의 고급 버전"}}
+
+주의사항:
+1. 유사한 의미의 옵션도 매칭으로 인정
+2. 가격 정보는 무시하고 옵션명만 비교
+3. true/false만 반환
+"""
+
+            response = openai.ChatCompletion.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": "당신은 인쇄 옵션 매칭 전문가입니다."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.1,
+                max_tokens=100
+            )
+            
+            result_text = response.choices[0].message.content.strip()
+            
+            # JSON 파싱
+            if result_text.startswith('{') and result_text.endswith('}'):
+                result = json.loads(result_text)
+                return result.get('match', False)
+            
+            return False
+            
+        except Exception as e:
+            print(f"AI 옵션 매칭 오류: {e}")
+            return False
     
     def _generate_recommendation_reason(self, price_score: float, deadline_score: float, 
                                       workfit_score: float, user_requirements: Dict) -> str:
