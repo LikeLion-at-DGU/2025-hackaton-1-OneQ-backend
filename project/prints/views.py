@@ -539,7 +539,7 @@ def chatsession_send_message(request, session_id):
                 shop_info += f"   ⏰ 제작기간: {shop['estimated_production_time']}\n"
                 shop_info += f"   🚚 배송방법: {shop['delivery_methods']}\n\n"
             
-            shop_info += "이 견적서와 디자인 파일을 가지고 추천 인쇄소에 방문하시면 됩니다.\n\n좋은 하루 되세요! 원하시는 결과물이 나오길 바랍니다! 😊"            
+            shop_info += "이 견적서와 디자인 파일을 가지고 추천 인쇄소에 방문하시면 됩니다.\n\n좋은 하루 되세요! 원하시는 결과물이 나오길 바랍니다! 😊\n\n**오른쪽 상단에 원큐스코어 보러가기 버튼을 눌러 최종결과를 확인하세요.**"            
             # AI 응답 업데이트
             chat_session.history[-1]['content'] = clean_msg + shop_info
             
