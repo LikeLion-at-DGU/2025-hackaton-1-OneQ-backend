@@ -558,28 +558,52 @@ class OneQScoreCalculator:
     
     def _generate_recommendation_reason(self, price_score: float, deadline_score: float, 
                                       workfit_score: float, user_requirements: Dict) -> str:
-        """추천 이유 생성"""
+        """추천 이유 생성 - 상세 버전"""
         reasons = []
+        detailed_reasons = []
         
+        # 가격 관련
         if price_score >= 80:
             reasons.append("경쟁력 있는 가격")
+            detailed_reasons.append("합리적인 가격으로 비용 효율적")
         elif price_score >= 60:
             reasons.append("합리적인 가격")
+            detailed_reasons.append("적정 수준의 가격으로 경제적")
         
+        # 납기 관련
         if deadline_score >= 80:
             reasons.append("빠른 납기")
+            detailed_reasons.append("빠르고 안정적인 납기 보장")
         elif deadline_score >= 60:
             reasons.append("안정적인 납기")
+            detailed_reasons.append("신뢰할 수 있는 납기 일정")
         
+        # 작업 적합도 관련
         if workfit_score >= 80:
             reasons.append("완벽한 스펙 매칭")
+            detailed_reasons.append("고품질 인쇄와 후가공 기술")
         elif workfit_score >= 60:
             reasons.append("적합한 작업 능력")
+            detailed_reasons.append("해당 카테고리 제작 경험이 풍부")
+        
+        # 추가 상세 정보
+        category = user_requirements.get('category', '')
+        if category:
+            detailed_reasons.append(f"{category} 전문 제작 기술력")
+        
+        # 위치 및 서비스 관련
+        detailed_reasons.append("접근하기 좋은 위치와 배송 서비스")
+        detailed_reasons.append("친절하고 신뢰할 수 있는 서비스")
         
         if not reasons:
             reasons.append("종합적인 만족도")
+            detailed_reasons.append("고객 만족도가 높은 인쇄소")
         
-        return ", ".join(reasons)
+        # 상세한 추천 이유 생성
+        if detailed_reasons:
+            return f"{', '.join(detailed_reasons)}로 안정적인 결과물을 보장합니다."
+        else:
+            return ", ".join(reasons)
     
     def _get_price_details(self, printshop: PrintShop, user_requirements: Dict) -> Dict:
         """가격 상세 정보"""
@@ -616,19 +640,21 @@ class OneQScoreCalculator:
             'available_categories': printshop.available_categories,
             'description': printshop.description
         }
+    
+    # 위치 매칭은 AI가 공통 프롬프트에서 처리하므로 제거
 
 
 def calculate_printshop_scores(printshops: List[PrintShop], user_requirements: Dict) -> List[Dict]:
-    """여러 인쇄소의 원큐스코어 계산"""
+    """여러 인쇄소의 원큐스코어 계산 (AI가 위치 우선 처리)"""
     calculator = OneQScoreCalculator()
     scored_printshops = []
     
+    # AI가 위치 우선 처리를 하므로 단순히 모든 인쇄소에 대해 점수 계산
     for printshop in printshops:
         try:
             score_result = calculator.calculate_oneq_score(printshop, user_requirements)
         except Exception as e:
             print(f"인쇄소 {printshop.name} 점수 계산 오류: {e}")
-            # 기본 점수로 계속 진행
             score_result = {
                 'oneq_score': 50,
                 'recommendation_reason': '기본 점수',
