@@ -44,45 +44,45 @@ def extract_quote_info(message: str, category: str = None) -> dict:
                 # 공통 필드
                 if '카테고리:' in line:
                     quote_info['category'] = line.split('카테고리:')[1].strip()
-                elif '수량:' in line or '포스터 수량:' in line or '명함 수량:' in line or '배너 수량:' in line or '현수막 수량:' in line:
+                elif '수량:' in line or '포스터 수량:' in line or '명함 수량:' in line or '배너 수량:' in line or '현수막 수량:' in line or '브로슈어 수량:' in line or '스티커 수량:' in line:
                     value = line.split(':', 1)[1].strip() if ':' in line else ''
                     quote_info['quantity'] = value
-                elif '납기일:' in line or '납기:' in line:
+                elif '납기일:' in line or '납기:' in line or '납기일자:' in line:
                     value = line.split(':', 1)[1].strip() if ':' in line else ''
                     quote_info['due_days'] = value
-                elif '지역:' in line:
+                elif '지역:' in line or '지역 정보:' in line:
                     value = line.split(':', 1)[1].strip() if ':' in line else ''
                     quote_info['region'] = value
-                elif '예산:' in line:
+                elif '예산:' in line or '예산 정보:' in line:
                     value = line.split(':', 1)[1].strip() if ':' in line else ''
                     quote_info['budget'] = value
                 
                 # 카테고리별 특화 필드
-                elif '용지:' in line or '용지 종류:' in line:
+                elif '용지:' in line or '용지 종류:' in line or '용지정보:' in line:
                     value = line.split(':', 1)[1].strip() if ':' in line else ''
                     quote_info['specifications']['paper'] = value
-                elif '사이즈:' in line or '포스터 사이즈:' in line or '명함 사이즈:' in line or '배너 사이즈:' in line or '현수막 사이즈:' in line:
+                elif '사이즈:' in line or '포스터 사이즈:' in line or '명함 사이즈:' in line or '배너 사이즈:' in line or '현수막 사이즈:' in line or '브로슈어 사이즈:' in line or '스티커 사이즈:' in line or '사이즈 종류:' in line:
                     value = line.split(':', 1)[1].strip() if ':' in line else ''
                     quote_info['specifications']['size'] = value
-                elif '코팅:' in line or '포스터 코팅:' in line:
+                elif '코팅:' in line or '포스터 코팅:' in line or '코팅정보:' in line or '포스터 코팅 종류:' in line:
                     value = line.split(':', 1)[1].strip() if ':' in line else ''
                     quote_info['specifications']['coating'] = value
-                elif '접지:' in line:
+                elif '접지:' in line or '접지방식:' in line or '접지정보:' in line or '접지 종류:' in line:
                     value = line.split(':', 1)[1].strip() if ':' in line else ''
                     quote_info['specifications']['folding'] = value
-                elif '인쇄:' in line or '인쇄 방식:' in line:
+                elif '인쇄:' in line or '인쇄 방식:' in line or '인쇄정보:' in line:
                     value = line.split(':', 1)[1].strip() if ':' in line else ''
                     quote_info['specifications']['printing'] = value
-                elif '후가공:' in line:
+                elif '후가공:' in line or '후가공정보:' in line:
                     value = line.split(':', 1)[1].strip() if ':' in line else ''
                     quote_info['specifications']['finishing'] = value
-                elif '거치대:' in line or '배너 거치대:' in line:
+                elif '거치대:' in line or '배너 거치대:' in line or '거치대정보:' in line or '배너 거치대 종류:' in line:
                     value = line.split(':', 1)[1].strip() if ':' in line else ''
                     quote_info['specifications']['stand'] = value
-                elif '가공:' in line or '현수막 추가 가공:' in line:
+                elif '가공:' in line or '현수막 추가 가공:' in line or '가공정보:' in line or '현수막 추가 가공:' in line:
                     value = line.split(':', 1)[1].strip() if ':' in line else ''
                     quote_info['specifications']['processing'] = value
-                elif '종류:' in line or '스티커 종류:' in line:
+                elif '종류:' in line or '스티커 종류:' in line or '종류정보:' in line:
                     value = line.split(':', 1)[1].strip() if ':' in line else ''
                     quote_info['specifications']['type'] = value
         
@@ -103,6 +103,39 @@ def extract_quote_info(message: str, category: str = None) -> dict:
     except Exception as e:
         print(f"Error extracting quote info: {e}")
     return quote_info
+
+def _validate_category_slots(category: str, slots: dict):
+    """카테고리별 필수 필드 검증"""
+    print(f"=== {category} 카테고리 필수 필드 검증 ===")
+    
+    # 공통 필수 필드
+    common_fields = ['quantity', 'due_days', 'region', 'budget']
+    
+    # 카테고리별 특화 필드
+    category_fields = {
+        '명함': ['paper', 'size', 'printing', 'finishing'],
+        '배너': ['size', 'stand'],
+        '포스터': ['paper', 'size', 'coating'],
+        '스티커': ['type', 'size'],
+        '현수막': ['size', 'processing'],
+        '브로슈어': ['paper', 'size', 'folding']
+    }
+    
+    required_fields = common_fields + category_fields.get(category, [])
+    
+    missing_fields = []
+    for field in required_fields:
+        if not slots.get(field):
+            missing_fields.append(field)
+        else:
+            print(f"✅ {field}: {slots[field]}")
+    
+    if missing_fields:
+        print(f"❌ 누락된 필드: {missing_fields}")
+    else:
+        print(f"🎉 {category} 카테고리 모든 필수 필드가 저장되었습니다!")
+    
+    print(f"=== 검증 완료 ===")
 
 # ===== 단계별 인쇄소 등록 Views =====
 
@@ -437,6 +470,46 @@ def chatsession_send_message(request, session_id):
         # 견적 정보 추출 (카테고리 정보 전달)
         category = chat_session.slots.get('category', '')
         quote_info = extract_quote_info(clean_msg, category)
+        
+        # 최종 견적서에서 추출된 정보를 슬롯에 업데이트
+        if quote_info:
+            current_slots = chat_session.slots.copy()
+            
+            print(f"=== 최종 견적서 슬롯 업데이트 디버깅 ===")
+            print(f"카테고리: {category}")
+            print(f"추출된 견적 정보: {quote_info}")
+            
+            # 기본 정보 업데이트
+            if quote_info.get('quantity'):
+                current_slots['quantity'] = quote_info['quantity']
+                print(f"✅ 수량 업데이트: {quote_info['quantity']}")
+            if quote_info.get('due_days'):
+                current_slots['due_days'] = quote_info['due_days']
+                print(f"✅ 납기일 업데이트: {quote_info['due_days']}")
+            if quote_info.get('region'):
+                current_slots['region'] = quote_info['region']
+                print(f"✅ 지역 업데이트: {quote_info['region']}")
+            if quote_info.get('budget'):
+                current_slots['budget'] = quote_info['budget']
+                print(f"✅ 예산 업데이트: {quote_info['budget']}")
+            
+            # specifications 정보를 개별 슬롯으로 업데이트
+            specifications = quote_info.get('specifications', {})
+            print(f"📋 specifications 정보: {specifications}")
+            
+            for key, value in specifications.items():
+                if value and value.strip():
+                    current_slots[key] = value
+                    print(f"✅ {key} 업데이트: {value}")
+                else:
+                    print(f"❌ {key} 값이 비어있음")
+            
+            chat_session.slots = current_slots
+            print(f"최종 업데이트된 슬롯: {chat_session.slots}")
+            print(f"=== 슬롯 업데이트 완료 ===")
+            
+            # 카테고리별 필수 필드 검증
+            _validate_category_slots(category, current_slots)
         
         # 예산 정보가 세션 슬롯에 없으면 AI 응답에서 다시 추출 시도
         if not chat_session.slots.get('budget'):
