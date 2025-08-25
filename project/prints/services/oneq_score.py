@@ -84,7 +84,7 @@ class OneQScoreCalculator:
         # 카테고리별 가격 정보 파싱
         price_info = self._parse_price_info(printshop, category, quantity)
         if not price_info:
-            return 50  # 기본값
+            return 70  # 기본값을 50에서 70으로 상향 조정
         
         # 후보 인쇄소들의 가격 목록 (임시로 현재 인쇄소만 사용)
         prices = [price_info['unit_price']]
@@ -92,27 +92,27 @@ class OneQScoreCalculator:
         p_med = sum(prices) / len(prices)
         p_i = price_info['unit_price']
         
-        # 1. 최저가 비율 (50%)
-        min_ratio = 100 * max(0, min(1, p_min / p_i)) if p_i > 0 else 0
+        # 1. 최저가 비율 (50%) - 더 후하게 계산
+        min_ratio = 100 * max(0.7, min(1, p_min / p_i)) if p_i > 0 else 70  # 최소 70점 보장
         
-        # 2. 예산 적합 (25%)
-        budget_fit = 50  # 기본값
+        # 2. 예산 적합 (25%) - 더 관대하게 계산
+        budget_fit = 70  # 기본값을 50에서 70으로 상향 조정
         if budget and self._parse_budget(budget):
             user_budget = self._parse_budget(budget)
             if user_budget:
-                gamma = 0.35
+                gamma = 0.5  # 0.35에서 0.5로 더 관대하게
                 budget_fit = 100 * (1 - abs(p_i - user_budget) / (gamma * user_budget))
-                budget_fit = max(0, min(100, budget_fit))
+                budget_fit = max(60, min(100, budget_fit))  # 최소 60점 보장
         
-        # 3. 시장 합리성 (25%)
-        market_fit = 50  # 기본값
+        # 3. 시장 합리성 (25%) - 더 관대하게 계산
+        market_fit = 70  # 기본값을 50에서 70으로 상향 조정
         if len(prices) > 1:
-            alpha = 0.30
+            alpha = 0.5  # 0.30에서 0.5로 더 관대하게
             market_fit = 100 * (1 - abs(p_i - p_med) / (alpha * p_med))
-            market_fit = max(0, min(100, market_fit))
+            market_fit = max(60, min(100, market_fit))  # 최소 60점 보장
         else:
-            # 후보가 1곳이면 MarketFit 제외
-            return 0.8 * budget_fit + 0.2 * min_ratio
+            # 후보가 1곳이면 MarketFit 제외하고 더 높은 점수
+            return 0.7 * budget_fit + 0.3 * min_ratio  # 가중치 조정
         
         # 최종 가격 점수
         price_score = 0.50 * min_ratio + 0.25 * budget_fit + 0.25 * market_fit
@@ -133,19 +133,19 @@ class OneQScoreCalculator:
             due_days = 7  # 기본값
         
         if not due_days:
-            return 50
+            return 70  # 기본값을 50에서 70으로 상향 조정
         
         # 리드타임 계산
         production_time = self._parse_production_time(printshop.production_time)
         finishing_time = self._get_finishing_time(printshop, user_requirements)
         quantity_time = self._get_quantity_time(user_requirements)
         
-        # 혼잡계수 (임시)
-        c = 1.0
+        # 혼잡계수 (임시) - 더 관대하게
+        c = 0.9  # 1.0에서 0.9로 더 관대하게
         if not printshop.is_verified:
-            c = 1.2
+            c = 1.0  # 1.2에서 1.0으로
         if not printshop.is_active:
-            c = 1.5
+            c = 1.2  # 1.5에서 1.2로
         
         # 총 리드타임
         L_i = production_time + (finishing_time + quantity_time) * c
@@ -153,25 +153,25 @@ class OneQScoreCalculator:
         # 여유 시간
         m_i = due_days - L_i
         
-        # 1. 기한충족 Feasibility (60%)
+        # 1. 기한충족 Feasibility (60%) - 더 관대하게
         if m_i >= 0:
             F = 100
         else:
-            M_lo = 2  # 2일
-            F = max(0, 100 * (1 + m_i / M_lo))
+            M_lo = 3  # 2일에서 3일로 더 관대하게
+            F = max(50, 100 * (1 + m_i / M_lo))  # 최소 50점 보장
         
-        # 2. 여유 버퍼 Buffer (25%)
-        if m_i >= 3:
+        # 2. 여유 버퍼 Buffer (25%) - 더 관대하게
+        if m_i >= 2:  # 3일에서 2일로 더 관대하게
             Buffer = 100
         elif m_i >= 0:
-            Buffer = 100 * (m_i / 3)
+            Buffer = 100 * (m_i / 2)  # 3에서 2로
         else:
-            Buffer = 0
+            Buffer = 50  # 0에서 50으로 최소 점수 보장
         
-        # 3. 신뢰/안정 Consistency (15%)
-        BaseReliab = 0.85
-        r_i = max(0.6, min(0.98, BaseReliab - 0.15 * (c - 1)))
-        R = 50 + 50 * r_i
+        # 3. 신뢰/안정 Consistency (15%) - 더 관대하게
+        BaseReliab = 0.9  # 0.85에서 0.9로 상향
+        r_i = max(0.7, min(0.98, BaseReliab - 0.1 * (c - 1)))  # 0.6에서 0.7로, 0.15에서 0.1로
+        R = 60 + 40 * r_i  # 50+50에서 60+40으로 상향
         
         # 최종 납기 점수
         deadline_score = 0.60 * F + 0.25 * Buffer + 0.15 * R
@@ -187,8 +187,8 @@ class OneQScoreCalculator:
         # 2. 선택 스펙/사용자 가중 (25%)
         opt_fit = self._calculate_option_fit(printshop, user_requirements)
         
-        # 3. 파일 체크 Preflight (15%)
-        preflight = 85  # 기본값 (임시)
+        # 3. 파일 체크 Preflight (15%) - 더 높은 기본값
+        preflight = 90  # 기본값을 85에서 90으로 상향 조정
         
         # 최종 작업 적합도 점수
         workfit_score = 0.60 * req_fit + 0.25 * opt_fit + 0.15 * preflight
@@ -428,7 +428,7 @@ class OneQScoreCalculator:
         
         # 카테고리 지원 여부 확인
         if category not in (printshop.available_categories or []):
-            return 0.0
+            return 60.0  # 0.0에서 60.0으로 상향 조정 (부분 점수 부여)
         
         # 기본 필수 스펙 체크
         required_specs = ['size', 'quantity']
@@ -442,7 +442,9 @@ class OneQScoreCalculator:
         if matches == len(required_specs):
             return 100.0
         else:
-            return (matches / len(required_specs)) * 100.0
+            # 부분 점수도 더 관대하게
+            partial_score = (matches / len(required_specs)) * 100.0
+            return max(70.0, partial_score)  # 최소 70점 보장
     
     def _calculate_option_fit(self, printshop: PrintShop, user_requirements: Dict) -> float:
         """선택 스펙 적합도 계산 (AI 기반 매칭)"""
@@ -468,11 +470,15 @@ class OneQScoreCalculator:
                                 option_matches += 1
                         except Exception as ai_error:
                             print(f"AI 옵션 매칭 실패: {ai_error}")
+                            # AI 매칭 실패 시에도 부분 점수 부여
+                            option_matches += 0.5
         
         if total_options == 0:
-            return 85  # 기본값
+            return 90  # 기본값을 85에서 90으로 상향 조정
         
-        return (option_matches / total_options) * 100.0
+        # 더 관대한 점수 계산
+        base_score = (option_matches / total_options) * 100.0
+        return max(75.0, base_score)  # 최소 75점 보장
     
     def _simple_option_match(self, user_option: str, option_text: str) -> bool:
         """간단한 텍스트 매칭"""
