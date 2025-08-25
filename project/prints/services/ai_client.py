@@ -888,7 +888,7 @@ JSON 형태로 응답해주세요:
 - '대략 25만원' → '22~28만원'
 
 JSON 형태로 응답해주세요:
-{"filled_slots": {"paper": "일반지", "size": "90x54mm"}, "action": "ASK"}"
+{"filled_slots": {"paper": "일반지", "size": "90x54mm"}, "action": "ASK"}"""
             
             client = openai.OpenAI(api_key=self.api_key)
             response = client.chat.completions.create(
