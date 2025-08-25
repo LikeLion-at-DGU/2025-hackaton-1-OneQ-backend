@@ -539,7 +539,7 @@ def chatsession_send_message(request, session_id):
                 shop_info += f"   ⏰ 제작기간: {shop['estimated_production_time']}\n"
                 shop_info += f"   🚚 배송방법: {shop['delivery_methods']}\n\n"
             
-            shop_info += "이 견적서와 디자인 파일을 가지고 추천 인쇄소에 방문하시면 됩니다.\n\n좋은 하루 되세요! 원하시는 결과물이 나오길 바랍니다! 😊"            
+            shop_info += "이 견적서와 디자인 파일을 가지고 추천 인쇄소에 방문하시면 됩니다.\n\n좋은 하루 되세요! 원하시는 결과물이 나오길 바랍니다! 😊\n\n오른쪽 상단에 [원큐스코어 보러가기 →] 버튼을 눌러 \n 최종결과를 확인하세요!"            
             # AI 응답 업데이트
             chat_session.history[-1]['content'] = clean_msg + shop_info
             
@@ -586,7 +586,7 @@ def chatsession_send_message(request, session_id):
                 })
         else:
             # 추천 인쇄소가 없는 경우
-            no_shop_msg = "\n\n😔 죄송합니다. 현재 요청하신 조건에 맞는 인쇄소가 없습니다.\n다른 조건으로 다시 시도해보시거나, 나중에 다시 문의해주세요."
+            no_shop_msg = "\n\n😔 죄송합니다. 현재 요청하신 조건에 맞는 인쇄소가 없습니다.\n 다른 조건으로 다시 시도해 보시는 것을 추천드립립니다."
             chat_session.history[-1]['content'] = clean_msg + no_shop_msg
     
     chat_session.save()
