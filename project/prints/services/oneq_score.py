@@ -236,7 +236,16 @@ class OneQScoreCalculator:
                 return None
             
             # 1. 먼저 정규표현식으로 시도
-            prices = re.findall(r'(\d+)(?:부|매)\s*[:\-]\s*(\d+)원', price_text)
+            # 브로슈어는 다양한 가격 형식 지원
+            if category == '브로슈어':
+                # 브로슈어 전용 패턴: "100부 - 15,000원", "100부: 15000원", "100부 15000원" 등
+                prices = re.findall(r'(\d+)(?:부|매)\s*[:\-\s]*(\d+(?:,\d+)?)원', price_text)
+                if not prices:
+                    # 콤마가 없는 형식도 시도
+                    prices = re.findall(r'(\d+)(?:부|매)\s*[:\-\s]*(\d+)', price_text)
+            else:
+                prices = re.findall(r'(\d+)(?:부|매)\s*[:\-]\s*(\d+)원', price_text)
+            
             print(f"🔍 정규표현식 결과: {prices}")
             
             if not prices:
@@ -261,7 +270,9 @@ class OneQScoreCalculator:
             # 수량에 맞는 가격 찾기
             for qty, price in prices:
                 qty_int = int(qty)
-                price_int = int(price)
+                # 콤마 제거 후 정수 변환
+                price_str = str(price).replace(',', '')
+                price_int = int(price_str)
                 if qty_int >= quantity:
                     unit_price = price_int // qty_int
                     result = {
@@ -274,7 +285,9 @@ class OneQScoreCalculator:
             # 마지막 가격 사용
             last_qty, last_price = prices[-1]
             last_qty_int = int(last_qty)
-            last_price_int = int(last_price)
+            # 콤마 제거 후 정수 변환
+            last_price_str = str(last_price).replace(',', '')
+            last_price_int = int(last_price_str)
             unit_price = last_price_int // last_qty_int
             result = {
                 'unit_price': unit_price,
@@ -320,11 +333,15 @@ class OneQScoreCalculator:
 예시:
 - "100매 - 12,000원, 200매 - 22,000원" → {{"unit_price": 120, "total_price": 12000}}
 - "최소 30매, 30매 - 55,000원" → {{"unit_price": 1833, "total_price": 55000}}
+- "100부 - 15,000원, 200부 - 28,000원" → {{"unit_price": 150, "total_price": 15000}}
+- "50부: 8,000원, 100부: 15,000원" → {{"unit_price": 160, "total_price": 8000}}
 
 주의사항:
 1. 요청 수량에 맞는 가격을 찾아주세요
 2. 단가는 총가격을 수량으로 나눈 값입니다
 3. 숫자만 반환해주세요 (콤마, 원 제외)
+4. 브로슈어는 "부" 단위, 다른 카테고리는 "매" 단위를 사용합니다
+5. 매, 부, 개, 등 단위를 잘 파악해 주세요
 """
 
             print(f"🤖 OpenAI API 호출 중...")
