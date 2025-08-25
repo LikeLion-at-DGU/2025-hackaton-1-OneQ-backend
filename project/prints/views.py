@@ -411,9 +411,12 @@ def chatsession_send_message(request, session_id):
         'timestamp': datetime.now().isoformat()
     })
     
-    # 로딩 메시지가 포함된 응답인지 확인
-    if "최종 견적서 산출 시 시간이 소요될 수 있습니다" in clean_msg:
-        # 로딩 메시지가 포함된 경우 프론트엔드에 신호 전달
+    # 로딩 메시지가 포함된 응답인지 확인 (AI가 연속으로 보내는 경우)
+    if "최종 견적서 산출 시 시간이 소요될 수 있습니다" in clean_msg and "=== 최종 견적서 ===" in clean_msg:
+        # 로딩 메시지와 견적서가 함께 포함된 경우, 견적서 처리로 진행
+        pass
+    elif "최종 견적서 산출 시 시간이 소요될 수 있습니다" in clean_msg:
+        # 로딩 메시지만 포함된 경우 프론트엔드에 신호 전달
         chat_session.save()
         serializer = ChatSessionSerializer(chat_session)
         response_data = serializer.data
@@ -807,11 +810,11 @@ def get_recommended_printshops(slots):
             # 예산 정보가 있는 인쇄소만 필터링 (실제 구현에서는 더 정교한 로직 필요)
             pass
     
-    # 상위 10개 후보 선정 (원큐스코어 계산을 위해)
-    # 이미 Python 리스트이므로 슬라이싱 사용
-    candidates = printshops[:10]
+    # 위치 우선 필터링을 위해 모든 후보를 원큐스코어 계산에 전달
+    # (위치 매칭 로직이 원큐스코어 계산기 내부에서 처리됨)
+    candidates = printshops[:20]  # 더 많은 후보를 고려
     
-    # 원큐스코어 계산
+    # 원큐스코어 계산 (AI가 위치 우선 처리)
     try:
         scored_printshops = calculate_printshop_scores(candidates, slots)
         # 상위 3개 반환
