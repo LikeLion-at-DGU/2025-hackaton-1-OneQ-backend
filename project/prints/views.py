@@ -431,7 +431,7 @@ def chatsession_send_message(request, session_id):
     quote_info = None
     recommended_shops = None
     
-    if "=== 최종 견적서 ===" in clean_msg and "요청하신 정보에 맞는 인쇄소를 추천해드리겠습니다" in clean_msg:
+    if "=== 최종 견적서 ===" in clean_msg:
         is_final_quote = True
         
         # 견적 정보 추출 (카테고리 정보 전달)
