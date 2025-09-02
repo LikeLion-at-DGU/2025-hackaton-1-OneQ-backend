@@ -155,7 +155,9 @@ CORS_ALLOW_HEADERS = [
 CSRF_TRUSTED_ORIGINS = [
     "https://oneq1.netlify.app",
     "https://oneqqq.netlify.app",
-    "https://yumiykim.shop",
+    #"https://yumiykim.shop", #폐기
+    "https://oneqqq.shop",
+    "https://www.oneqqq.shop",
     "http://localhost:5173",
     "http://localhost:5174",
 ]
